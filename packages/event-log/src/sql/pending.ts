@@ -5,6 +5,7 @@ import type { SqlDialect } from "./index";
 export interface SqlQueueReceipt {
   eventId: string;
   pendingSeq: number;
+  enqueuedAt?: number;
   status: "queued";
 }
 
@@ -77,7 +78,12 @@ export class SqlPendingQueue {
       .bind(input.sessionId, eventId)
       .first<DbPendingRow>();
     if (!row) throw new Error("pending queue insert was not durable");
-    return { eventId, pendingSeq: Number(row.pending_seq), status: "queued" };
+    return {
+      eventId,
+      pendingSeq: Number(row.pending_seq),
+      enqueuedAt: Number(row.enqueued_at),
+      status: "queued",
+    };
   }
 
   async peek(sessionId: string): Promise<SqlPendingRow | null> {

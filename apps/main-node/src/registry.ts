@@ -316,6 +316,18 @@ export class SessionRegistry {
               (input.event as { id?: string }).id,
           );
           this.deps.hub.publish(sessionId, canonical ?? input.event);
+          this.deps.hub.publish(sessionId, {
+            type: "system.user_message_promoted",
+            event_id: (input.event as { id?: string }).id ?? "",
+            pending_seq: input.pendingSeq,
+            seq: (canonical as { seq?: number } | undefined)?.seq,
+            processed_at:
+              (canonical as { processed_at?: string } | undefined)?.processed_at ??
+              new Date().toISOString(),
+            session_thread_id:
+              (input.event as { session_thread_id?: string }).session_thread_id ??
+              "sthr_primary",
+          } as unknown as SessionEvent);
           if (input.event.type !== "user.message") {
             throw new Error(
               `${input.event.type} delivery is not wired into the active harness turn`,
@@ -331,6 +343,29 @@ export class SessionRegistry {
       {
         error: (context, message) =>
           log.error(context as Record<string, unknown>, message),
+      },
+      {
+        onCancelled: (rows) => {
+          for (const row of rows) {
+            this.deps.hub.publish(sessionId, {
+              type: "system.user_message_cancelled",
+              event_id: row.eventId,
+              pending_seq: row.pendingSeq,
+              session_thread_id: row.sessionThreadId,
+              cancelled_at: row.cancelledAt ?? Date.now(),
+            } as unknown as SessionEvent);
+          }
+        },
+        resolveContext: async (sid) => {
+          const row = await this.deps.sql
+            .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
+            .bind(sid)
+            .first<{ tenant_id: string; agent_id: string | null }>();
+          if (!row?.agent_id) {
+            throw new Error(`session ${sid} has no agent routing context`);
+          }
+          return { tenantId: row.tenant_id, agentId: row.agent_id };
+        },
       },
     );
 

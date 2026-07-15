@@ -4,11 +4,20 @@ import type {
   SessionTurnExecutor,
   SessionTurnInput,
   SessionTurnRunner,
+  SessionPendingRow,
 } from "@open-managed-agents/session-runtime";
 import type { SessionEvent } from "@open-managed-agents/shared";
 
 interface ExecutorLogger {
   error?(context: unknown, message: string): void;
+}
+
+interface ExecutorHooks {
+  onCancelled?(rows: SessionPendingRow[]): void;
+  resolveContext?(sessionId: string): Promise<{
+    tenantId: string;
+    agentId: string;
+  }>;
 }
 
 interface ActiveTurn {
@@ -28,6 +37,7 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
     private readonly queue: SessionPendingQueue,
     private readonly runner: SessionTurnRunner,
     private readonly logger: ExecutorLogger = {},
+    private readonly hooks: ExecutorHooks = {},
   ) {}
 
   async enqueue(
@@ -42,7 +52,8 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
   }
 
   async interrupt(sessionId: string): Promise<void> {
-    await this.queue.cancelAll(sessionId);
+    const cancelled = await this.queue.cancelAll(sessionId);
+    if (cancelled.length > 0) this.hooks.onCancelled?.(cancelled);
     this.active.get(sessionId)?.controller.abort();
   }
 
@@ -106,14 +117,18 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
       });
       try {
         const event = JSON.parse(promoted.data) as SessionEvent;
-        if (!defaults.tenantId || !defaults.agentId) {
+        const context =
+          defaults.tenantId && defaults.agentId
+            ? { tenantId: defaults.tenantId, agentId: defaults.agentId }
+            : await this.hooks.resolveContext?.(sessionId);
+        if (!context?.tenantId || !context.agentId) {
           throw new Error(`missing turn routing context for session ${sessionId}`);
         }
         await this.runner.run(
           {
             sessionId,
-            tenantId: defaults.tenantId,
-            agentId: defaults.agentId,
+            tenantId: context.tenantId,
+            agentId: context.agentId,
             event,
             pendingSeq: promoted.pendingSeq,
           },

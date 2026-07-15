@@ -4,6 +4,7 @@ import type { SessionEvent } from "@open-managed-agents/shared";
 export type QueueReceipt = {
   eventId: string;
   pendingSeq: number;
+  enqueuedAt?: number;
   status: "queued";
 };
 
@@ -87,10 +88,11 @@ export class InMemorySessionPendingQueue implements SessionPendingQueue {
       (row) => row.sessionId === input.sessionId && row.eventId === eventId,
     );
     if (existing) {
-      return {
-        eventId,
-        pendingSeq: existing.pendingSeq,
-        status: "queued",
+    return {
+      eventId,
+      pendingSeq: existing.pendingSeq,
+      enqueuedAt: existing.enqueuedAt,
+      status: "queued",
       };
     }
 
@@ -107,7 +109,12 @@ export class InMemorySessionPendingQueue implements SessionPendingQueue {
       cancelledAt: null,
     };
     this.rows.push(row);
-    return { eventId, pendingSeq: row.pendingSeq, status: "queued" };
+    return {
+      eventId,
+      pendingSeq: row.pendingSeq,
+      enqueuedAt: row.enqueuedAt,
+      status: "queued",
+    };
   }
 
   async peek(sessionId: string): Promise<SessionPendingRow | null> {

@@ -89,7 +89,7 @@ export class NodeSessionRouter implements SessionRouter {
           type: "system.user_message_pending",
           event_id: receipt.eventId,
           pending_seq: receipt.pendingSeq,
-          enqueued_at: Date.now(),
+          enqueued_at: receipt.enqueuedAt ?? Date.now(),
           session_thread_id:
             (event as { session_thread_id?: string }).session_thread_id ??
             "sthr_primary",
