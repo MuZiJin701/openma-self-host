@@ -47,6 +47,7 @@ import type {
 import type { LanguageModel } from "ai";
 import { getLogger } from "@open-managed-agents/observability";
 import type { EventStreamHub } from "./lib/event-stream-hub.js";
+import type { WorkerPool } from "./lib/worker-pool.js";
 
 const log = getLogger("session-registry");
 
@@ -106,6 +107,7 @@ export interface SessionRegistryDeps {
   sqlDialect?: "sqlite" | "postgres";
 
   pendingQueue: SqlPendingQueue;
+  workerPool?: WorkerPool;
 }
 
 export interface SessionEntry {
@@ -380,6 +382,7 @@ export class SessionRegistry {
           }
           return { tenantId: row.tenant_id, agentId: row.agent_id };
         },
+        workerPool: this.deps.workerPool,
       },
     );
 

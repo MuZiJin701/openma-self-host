@@ -42,8 +42,13 @@
   immutable, files use the shared BlobStore key layout, Agent bindings are
   tenant/version validated, and selected files are provisioned under the
   sandbox's fixed `/mnt/skills/<skill>/<version>/` read-only view on startup.
-- Environment execution beyond `env-local-runtime`, WorkerPool, and
-  multi-replica validation remain to be implemented.
+  Environment execution beyond `env-local-runtime` and multi-replica
+  validation remain to be implemented.
+- A process-wide WorkerPool now bounds total and per-tenant active turns using
+  `WORKER_MAX_ACTIVE`, `TENANT_MAX_ACTIVE`, and optional `TURN_TIMEOUT_MS`;
+  queue lifecycle metrics are emitted through the existing `/metrics` surface.
+- Postgres lease semantics, crash/SSE integration tests, and multi-replica
+  validation remain open.
 - Native SQLite-backed tests are currently blocked in this workspace because
   `better-sqlite3` has no installed Node 24 binary and the C++ build toolchain
   is unavailable; pure queue tests and TypeScript checks remain runnable.

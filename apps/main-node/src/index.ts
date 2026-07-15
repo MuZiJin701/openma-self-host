@@ -132,6 +132,7 @@ import { PgEventStreamHub } from "./lib/pg-event-stream-hub";
 import { NodeHarnessRuntime } from "./lib/node-harness-runtime";
 import { SessionRegistry } from "./registry.js";
 import { NodeModelResolver } from "./lib/node-model-resolver.js";
+import { WorkerPool } from "./lib/worker-pool.js";
 
 const toMarkdownProvider = nodeToMarkdown();
 
@@ -296,6 +297,16 @@ const modelResolver = new NodeModelResolver(modelCardsService, {
   fallbackBaseUrl: process.env.ANTHROPIC_BASE_URL,
   fallbackCustomHeaders: parseCustomHeaders(process.env.ANTHROPIC_CUSTOM_HEADERS),
   allowEnvironmentFallback: process.env.AUTH_DISABLED === "1",
+});
+
+const workerPool = new WorkerPool({
+  maxActive: Math.max(1, Number(process.env.WORKER_MAX_ACTIVE ?? 4) || 4),
+  tenantMaxActive: Math.max(1, Number(process.env.TENANT_MAX_ACTIVE ?? 2) || 2),
+  timeoutMs: Math.max(0, Number(process.env.TURN_TIMEOUT_MS ?? 0) || 0) || undefined,
+  onEvent: (event) => {
+    metrics.counter("oma_worker_events_total", 1, { type: event.type });
+    metrics.histogram("oma_worker_turn_duration_seconds", event.durationMs / 1000, { type: event.type });
+  },
 });
 
 let memoryBlobs: import("@open-managed-agents/memory-store").BlobStore;
@@ -510,6 +521,7 @@ const sessionRegistry = new SessionRegistry({
   sandboxWorkdirRoot: process.env.SANDBOX_WORKDIR ?? "./data/sandboxes",
   sqlDialect: dialect,
   pendingQueue,
+  workerPool,
   buildModel: (agent, tenantId) => {
     if (!tenantId) throw new Error("tenantId required for model resolution");
     return modelResolver.resolve({ tenantId, agent }).then((result) => result.model);

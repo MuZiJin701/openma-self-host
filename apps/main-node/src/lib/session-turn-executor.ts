@@ -7,6 +7,7 @@ import type {
   SessionPendingRow,
 } from "@open-managed-agents/session-runtime";
 import type { SessionEvent } from "@open-managed-agents/shared";
+import type { WorkerPool } from "./worker-pool.js";
 
 interface ExecutorLogger {
   error?(context: unknown, message: string): void;
@@ -18,11 +19,13 @@ interface ExecutorHooks {
     tenantId: string;
     agentId: string;
   }>;
+  workerPool?: WorkerPool;
 }
 
 interface ActiveTurn {
   controller: AbortController;
   pendingSeq: number;
+  jobId?: string;
 }
 
 /**
@@ -54,7 +57,9 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
   async interrupt(sessionId: string): Promise<void> {
     const cancelled = await this.queue.cancelAll(sessionId);
     if (cancelled.length > 0) this.hooks.onCancelled?.(cancelled);
-    this.active.get(sessionId)?.controller.abort();
+    const active = this.active.get(sessionId);
+    active?.controller.abort();
+    if (active?.jobId) await this.hooks.workerPool?.cancel(active.jobId);
   }
 
   async recover(sessionId: string): Promise<void> {
@@ -124,22 +129,34 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
         if (!context?.tenantId || !context.agentId) {
           throw new Error(`missing turn routing context for session ${sessionId}`);
         }
-        await this.runner.run(
-          {
-            sessionId,
+        const input = {
+          sessionId,
+          tenantId: context.tenantId,
+          agentId: context.agentId,
+          event,
+          pendingSeq: promoted.pendingSeq,
+        };
+        const jobId = `turn:${sessionId}:${promoted.pendingSeq}`;
+        if (this.hooks.workerPool) {
+          this.active.get(sessionId)!.jobId = jobId;
+          await this.hooks.workerPool.submit({
+            jobId,
             tenantId: context.tenantId,
-            agentId: context.agentId,
-            event,
-            pendingSeq: promoted.pendingSeq,
-          },
-          controller.signal,
-        );
+            sessionId,
+            run: (signal) => this.runner.run(input, signal),
+          });
+          await this.hooks.workerPool.waitFor(jobId);
+        } else {
+          await this.runner.run(input, controller.signal);
+        }
       } catch (error) {
         this.logger.error?.(
           { error, sessionId, pendingSeq: promoted.pendingSeq },
           "session turn failed",
         );
       } finally {
+        const current = this.active.get(sessionId);
+        if (current?.jobId) await this.hooks.workerPool?.waitFor(current.jobId);
         this.active.delete(sessionId);
       }
     }

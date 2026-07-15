@@ -46,6 +46,15 @@ pnpm --filter @open-managed-agents/main-node exec vitest run test/session-queue.
 
 The SQLite integration tests require a working `better-sqlite3` native binding.
 
+## WorkerPool and observability
+
+Node uses one process-wide WorkerPool. `WORKER_MAX_ACTIVE` bounds total active
+turns, `TENANT_MAX_ACTIVE` bounds a tenant's active turns, and
+`TURN_TIMEOUT_MS` aborts a turn after the configured duration (`0` disables the
+timeout). Queue and turn lifecycle counters/histograms are exposed at
+`/metrics`; set `METRICS_BIND_TOKEN` when the endpoint is not behind a trusted
+reverse proxy.
+
 ## Model Cards and Environments
 
 Model Cards are tenant-scoped and are resolved by the Node runtime through the
