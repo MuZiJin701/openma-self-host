@@ -359,6 +359,9 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       }
       envId = deps.localRuntimeEnvId ?? "env_local_runtime";
     }
+    if (agentIsLocalRuntime && envId !== (deps.localRuntimeEnvId ?? "env_local_runtime")) {
+      return c.json({ error: "environment_not_supported", environment_id: envId }, 501);
+    }
 
     const { tenant_id: _atid, ...agentSnapshot } = agentRow;
     const envSnap = deps.loadEnvironment

@@ -34,8 +34,12 @@
   promotion currently batches canonical insert + queue delete, while
   cross-replica leasing/`SKIP LOCKED`, confirmation delivery, metrics, and
   crash/SSE integration tests remain open.
-- Tenant resource APIs, Model Cards, Skills, Environment execution,
-  WorkerPool, and multi-replica validation remain to be implemented.
+- Tenant-scoped Model Cards and Environment CRUD are now wired into the Node
+  service. Model Card creation requires `PLATFORM_ROOT_SECRET`; the public API
+  never returns plaintext credentials, and global environment-variable fallback
+  is limited to `AUTH_DISABLED=1`.
+- Skills, Environment execution beyond `env-local-runtime`, WorkerPool, and
+  multi-replica validation remain to be implemented.
 - Native SQLite-backed tests are currently blocked in this workspace because
   `better-sqlite3` has no installed Node 24 binary and the C++ build toolchain
   is unavailable; pure queue tests and TypeScript checks remain runnable.

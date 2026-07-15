@@ -45,3 +45,15 @@ pnpm --filter @open-managed-agents/main-node exec vitest run test/session-queue.
 ```
 
 The SQLite integration tests require a working `better-sqlite3` native binding.
+
+## Model Cards and Environments
+
+Model Cards are tenant-scoped and are resolved by the Node runtime through the
+Model Card store. Set `PLATFORM_ROOT_SECRET` before creating cards; the service
+uses it to protect provider credentials. API responses expose only safe card
+metadata and key previews. A process-level provider key is accepted only when
+`AUTH_DISABLED=1`, for local single-user development.
+
+Environment resources are tenant-scoped CRUD records. Session execution is
+currently restricted to the built-in `env-local-runtime`; requesting another
+environment returns `environment_not_supported`.

@@ -69,12 +69,13 @@ export interface SessionRegistryDeps {
 
   /** Build the LanguageModel for the agent. Reads env, applies custom
    *  headers, picks the right provider. */
-  buildModel(agent: AgentConfig): LanguageModel;
+  buildModel(agent: AgentConfig, tenantId?: string): LanguageModel | Promise<LanguageModel>;
 
   /** Build harness tools. Returns the tools dict the harness expects. */
   buildTools(
     agent: AgentConfig,
     sandbox: SandboxExecutor,
+    tenantId?: string,
   ): Promise<unknown>;
 
   /** Build harness instance + context. Each is platform-neutral so the
@@ -89,6 +90,7 @@ export interface SessionRegistryDeps {
     sessionId: string;
     eventLog: SqlEventLog;
     abortSignal?: AbortSignal;
+    tenantId?: string;
   }): Promise<unknown>;
 
   /** Sandbox workdir root, e.g. /app/data/sandboxes. Per-session dirs
@@ -291,14 +293,15 @@ export class SessionRegistry {
       // Node passes no-ops since the work has already been done.
       mountMemoryStores: async () => {},
       mountSessionOutputs: async () => {},
-      buildModel: (agent) => this.deps.buildModel(agent),
-      buildTools: (agent, sb) => this.deps.buildTools(agent, sb),
+      buildModel: (agent) => this.deps.buildModel(agent, tenantId),
+      buildTools: (agent, sb) => this.deps.buildTools(agent, sb, tenantId),
       buildHarness: () => this.deps.buildHarness(),
       buildHarnessContext: (input) =>
         this.deps.buildHarnessContext({
           ...input,
           sessionId,
           eventLog,
+          tenantId,
         }),
       publish: (event: SessionEvent) => this.deps.hub.publish(sessionId, event),
     });

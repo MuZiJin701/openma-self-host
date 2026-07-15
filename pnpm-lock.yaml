@@ -608,6 +608,9 @@ importers:
       '@open-managed-agents/memory-store':
         specifier: workspace:*
         version: link:../../packages/memory-store
+      '@open-managed-agents/model-cards-store':
+        specifier: workspace:*
+        version: link:../../packages/model-cards-store
       '@open-managed-agents/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -1079,6 +1082,9 @@ importers:
       '@open-managed-agents/memory-store':
         specifier: workspace:*
         version: link:../memory-store
+      '@open-managed-agents/model-cards-store':
+        specifier: workspace:*
+        version: link:../model-cards-store
       '@open-managed-agents/observability':
         specifier: workspace:*
         version: link:../observability

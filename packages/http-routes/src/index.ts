@@ -50,6 +50,9 @@ export type {
 export { buildEvalRoutes } from "./evals";
 export type { EvalRoutesDeps, EvalTaskSpec } from "./evals";
 
+export { buildModelCardRoutes } from "./model-cards";
+export { buildEnvironmentRoutes } from "./environments";
+
 export { buildIntegrationsRoutes } from "./integrations";
 export type {
   IntegrationsRoutesDeps,

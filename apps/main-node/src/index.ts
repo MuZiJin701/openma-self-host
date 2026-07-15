@@ -50,13 +50,13 @@ import { createSqliteSessionService } from "@open-managed-agents/sessions-store"
 import { createSqliteFileService } from "@open-managed-agents/files-store";
 import { createSqliteEvalRunService } from "@open-managed-agents/evals-store";
 import { createSqliteEnvironmentService } from "@open-managed-agents/environments-store";
+import { createSqliteModelCardService } from "@open-managed-agents/model-cards-store";
 import { toFileRecord } from "@open-managed-agents/files-store";
 import { SqlEventLog, SqlPendingQueue } from "@open-managed-agents/event-log/sql";
 import type { SessionEvent } from "@open-managed-agents/shared";
 import { generateEventId } from "@open-managed-agents/shared";
 import { DefaultHarness } from "@open-managed-agents/agent/harness/default-loop";
 import { buildTools } from "@open-managed-agents/agent/harness/tools";
-import { resolveModel } from "@open-managed-agents/agent/harness/provider";
 import { composeSystemPrompt } from "@open-managed-agents/agent/harness/platform-guidance";
 import type { HarnessContext } from "@open-managed-agents/agent/harness/interface";
 import { nodeToMarkdown } from "@open-managed-agents/markdown/adapters/node";
@@ -74,6 +74,8 @@ import {
   buildEvalRoutes,
   buildIntegrationsRoutes,
   buildIntegrationsGatewayRoutes,
+  buildModelCardRoutes,
+  buildEnvironmentRoutes,
   type RouteServices,
   type ApiKeyStorage,
   type ApiKeyMeta,
@@ -126,6 +128,7 @@ import {
 import { PgEventStreamHub } from "./lib/pg-event-stream-hub";
 import { NodeHarnessRuntime } from "./lib/node-harness-runtime";
 import { SessionRegistry } from "./registry.js";
+import { NodeModelResolver } from "./lib/node-model-resolver.js";
 
 const toMarkdownProvider = nodeToMarkdown();
 
@@ -276,6 +279,20 @@ const sessionsService = createSqliteSessionService({ db: drizzleDb });
 const filesService = createSqliteFileService({ db: drizzleDb });
 const evalsService = createSqliteEvalRunService({ db: drizzleDb });
 const environmentsService = createSqliteEnvironmentService({ db: drizzleDb });
+const modelCardsService = createSqliteModelCardService(
+  { db: drizzleDb },
+  {
+    crypto: platformRootSecret
+      ? new WebCryptoAesGcm(platformRootSecret, "model-cards.api-keys")
+      : undefined,
+  },
+);
+const modelResolver = new NodeModelResolver(modelCardsService, {
+  fallbackApiKey: process.env.ANTHROPIC_API_KEY,
+  fallbackBaseUrl: process.env.ANTHROPIC_BASE_URL,
+  fallbackCustomHeaders: parseCustomHeaders(process.env.ANTHROPIC_CUSTOM_HEADERS),
+  allowEnvironmentFallback: process.env.AUTH_DISABLED === "1",
+});
 
 let memoryBlobs: import("@open-managed-agents/memory-store").BlobStore;
 let memoryBlobDescription: string;
@@ -486,23 +503,16 @@ const sessionRegistry = new SessionRegistry({
   sandboxWorkdirRoot: process.env.SANDBOX_WORKDIR ?? "./data/sandboxes",
   sqlDialect: dialect,
   pendingQueue,
-  buildModel: (agent) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY env var required for harness turns");
-    return resolveModel(
-      agent.model,
-      apiKey,
-      process.env.ANTHROPIC_BASE_URL,
-      undefined,
-      parseCustomHeaders(process.env.ANTHROPIC_CUSTOM_HEADERS),
-    );
+  buildModel: (agent, tenantId) => {
+    if (!tenantId) throw new Error("tenantId required for model resolution");
+    return modelResolver.resolve({ tenantId, agent }).then((result) => result.model);
   },
-  buildTools: async (agent, sandbox) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY env var required for harness turns");
+  buildTools: async (agent, sandbox, tenantId) => {
+    if (!tenantId) throw new Error("tenantId required for model resolution");
+    const credentials = await modelResolver.resolveCredentials({ tenantId, agent });
     return buildTools(agent, sandbox, {
-      ANTHROPIC_API_KEY: apiKey,
-      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+      ANTHROPIC_API_KEY: credentials.apiKey,
+      ANTHROPIC_BASE_URL: credentials.baseUrl,
       toMarkdown: toMarkdownProvider,
     });
   },
@@ -510,9 +520,12 @@ const sessionRegistry = new SessionRegistry({
     const h = new DefaultHarness();
     return { run: (ctx: unknown) => h.run(ctx as HarnessContext) };
   },
-      buildHarnessContext: async (input) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY env var required for harness turns");
+  buildHarnessContext: async (input) => {
+    if (!input.tenantId) throw new Error("tenantId required for model resolution");
+    const credentials = await modelResolver.resolveCredentials({
+      tenantId: input.tenantId,
+      agent: input.agent,
+    });
     const runtime = new NodeHarnessRuntime({
       sessionId: input.sessionId,
       log: input.eventLog,
@@ -531,8 +544,8 @@ const sessionRegistry = new SessionRegistry({
       systemPrompt: composeSystemPrompt(rawSystemPrompt),
       rawSystemPrompt,
       env: {
-        ANTHROPIC_API_KEY: apiKey,
-        ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+        ANTHROPIC_API_KEY: credentials.apiKey,
+        ANTHROPIC_BASE_URL: credentials.baseUrl,
       },
       runtime,
     } satisfies HarnessContext;
@@ -786,7 +799,25 @@ const v1 = new Hono<{
 v1.use("*", authMw);
 
 // Mount route bundles. Same paths CF uses; behavior preserved.
-v1.route("/agents", buildAgentRoutes({ services }));
+v1.route("/agents", buildAgentRoutes({
+  services,
+  validateModel: async (tenantId, model) => {
+    const modelId = typeof model === "string" ? model : model.id;
+    const cards = await modelCardsService.list({ tenantId });
+    if (cards.every((card) => card.archived_at !== null)) {
+      return { valid: process.env.AUTH_DISABLED === "1" };
+    }
+    return cards.some((card) => card.archived_at === null && card.model_id === modelId)
+      ? { valid: true }
+      : { valid: false, error: `No model card with model_id "${modelId}" for this tenant` };
+  },
+}));
+v1.route("/model_cards", buildModelCardRoutes({
+  modelCards: modelCardsService,
+  internalToken: process.env.INTERNAL_MODEL_CARD_TOKEN,
+  encryptionConfigured: Boolean(platformRootSecret),
+}));
+v1.route("/environments", buildEnvironmentRoutes({ environments: environmentsService }));
 const sessionRouter = new NodeSessionRouter({
   sql,
   hub,
@@ -803,6 +834,7 @@ v1.route("/sessions", buildSessionRoutes({
   // synthetic snapshot so session create doesn't 404 on missing env_id.
   localRuntimeEnvId: "env-local-runtime",
   loadEnvironment: async ({ environmentId }) => {
+    if (environmentId !== "env-local-runtime") return null;
     return {
       id: environmentId,
       runtime: "local",
@@ -861,11 +893,9 @@ v1.route("/evals", buildEvalRoutes({
   // dep undefined so the route accepts any environment_id without 404ing.
 }));
 
-// Stubs for routes the console hits but main-node doesn't yet implement.
-v1.get("/environments", (c) => c.json({ data: [] }));
+// Runtime registration remains intentionally unsupported in self-host.
 v1.get("/runtimes", (c) => c.json({ data: [] }));
 v1.get("/skills", (c) => c.json({ data: [] }));
-v1.get("/model_cards", (c) => c.json({ data: [] }));
 v1.get("/models/list", (c) =>
   c.json({
     data: [
