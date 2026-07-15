@@ -66,6 +66,9 @@ export interface RouteServices {
    * non-dream resources. buildDreamRoutes requires it at runtime. */
   dreams?: DreamService;
   kv: KvStore;
+  /** Node may create a tenant-scoped SQL KV adapter per request. Legacy
+   * fixtures can omit this and continue using the fixed `kv` instance. */
+  kvForTenant?: (tenantId: string) => KvStore;
   /** Per-session event log writer. Bound to a sessionId at the call site. */
   newEventLog: (sessionId: string) => {
     appendAsync(ev: unknown): Promise<void>;
@@ -113,4 +116,14 @@ export function resolveServices(
   c: Context,
 ): RouteServices {
   return typeof arg === "function" ? arg(c) : arg;
+}
+
+/** Resolve the KV namespace for an authenticated tenant. The fallback keeps
+ * old route fixtures working while Node moves away from a process-global
+ * `default` tenant adapter. */
+export function resolveTenantKv(
+  services: Pick<RouteServices, "kv" | "kvForTenant">,
+  tenantId: string,
+): KvStore {
+  return services.kvForTenant?.(tenantId) ?? services.kv;
 }

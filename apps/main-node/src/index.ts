@@ -540,7 +540,9 @@ await sessionRegistry.bootstrap();
 
 // ─── Services bundle ────────────────────────────────────────────────────
 
-const kv = new SqlKvStore({ db: drizzleDb, tenantId: "default" });
+const kvForTenant = (tenantId: string) =>
+  new SqlKvStore({ db: drizzleDb, tenantId });
+const kv = kvForTenant("default");
 
 const services: RouteServices = {
   sql,
@@ -551,6 +553,7 @@ const services: RouteServices = {
   sessions: sessionsService,
   dreams: dreamsService,
   kv,
+  kvForTenant,
   newEventLog,
   hub: {
     publish: (sid, ev) => hub.publish(sid, ev as SessionEvent),
