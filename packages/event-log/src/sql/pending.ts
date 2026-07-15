@@ -103,6 +103,26 @@ export class SqlPendingQueue {
     return row ? toPendingRow(row) : null;
   }
 
+  /** Claim the next row for a replica. PostgreSQL uses SKIP LOCKED while
+   * lease columns make the claim visible after the short statement. */
+  async claim(sessionId: string, leaseId: string, leaseMs = 30_000): Promise<SqlPendingRow | null> {
+    const lock = this.dialect === "postgres" ? " FOR UPDATE SKIP LOCKED" : "";
+    const row = await this.sql.prepare(
+      `SELECT session_id, pending_seq, session_thread_id, type, event_id, data, enqueued_at, cancelled_at
+         FROM session_pending_events
+        WHERE session_id = ? AND cancelled_at IS NULL
+          AND (lease_id IS NULL OR leased_until < ?)
+        ORDER BY pending_seq ASC LIMIT 1${lock}`,
+    ).bind(sessionId, Date.now()).first<DbPendingRow>();
+    if (!row) return null;
+    const updated = await this.sql.prepare(
+      `UPDATE session_pending_events SET lease_id = ?, leased_until = ?
+         WHERE session_id = ? AND pending_seq = ? AND cancelled_at IS NULL
+           AND (lease_id IS NULL OR leased_until < ?)`
+    ).bind(leaseId, Date.now() + leaseMs, sessionId, row.pending_seq, Date.now()).run();
+    return (updated.meta?.changes ?? 0) > 0 ? toPendingRow(row) : null;
+  }
+
   /**
    * Promote one row to the canonical event log. The canonical INSERT and
    * queue DELETE share one SQL batch, so a process crash cannot lose an

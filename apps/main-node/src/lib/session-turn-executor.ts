@@ -110,7 +110,10 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
     },
   ): Promise<void> {
     while (true) {
-      const row = await this.queue.peek(sessionId);
+      const leaseId = `lease:${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+      const row = this.queue.claim
+        ? await this.queue.claim(sessionId, leaseId)
+        : await this.queue.peek(sessionId);
       let promoted = row ? await this.queue.promote(sessionId, row.pendingSeq) : null;
       if (!promoted) {
         const recovered = await this.queue.promoted?.(sessionId);

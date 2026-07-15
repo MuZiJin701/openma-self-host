@@ -368,6 +368,8 @@ export async function ensureSchema(
            data TEXT NOT NULL,
            enqueued_at BIGINT NOT NULL,
            cancelled_at BIGINT,
+           lease_id TEXT,
+           leased_until BIGINT,
            UNIQUE (session_id, event_id)
          );`
       : `CREATE TABLE IF NOT EXISTS session_pending_events (
@@ -379,6 +381,8 @@ export async function ensureSchema(
            data TEXT NOT NULL,
            enqueued_at BIGINT NOT NULL,
            cancelled_at BIGINT,
+           lease_id TEXT,
+           leased_until BIGINT,
            UNIQUE (session_id, event_id)
          );`,
   );
@@ -387,6 +391,9 @@ export async function ensureSchema(
       ON session_pending_events (session_id, pending_seq)
       WHERE cancelled_at IS NULL;
   `);
+  const pendingCols = await readPendingColumns(sql, dialect);
+  if (!pendingCols.has("lease_id")) await sql.exec(`ALTER TABLE session_pending_events ADD COLUMN lease_id TEXT`);
+  if (!pendingCols.has("leased_until")) await sql.exec(`ALTER TABLE session_pending_events ADD COLUMN leased_until BIGINT`);
   await sql.exec(`
     CREATE TABLE IF NOT EXISTS session_turn_runs (
       session_id TEXT NOT NULL,
@@ -427,4 +434,11 @@ async function readSessionEventColumns(
     for (const row of r.results ?? []) cols.add(row.name);
   }
   return cols;
+}
+
+async function readPendingColumns(sql: SqlClient, dialect: SqlDialect): Promise<Set<string>> {
+  const rows = dialect === "postgres"
+    ? await sql.prepare(`SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'session_pending_events'`).all<{ name: string }>()
+    : await sql.prepare(`PRAGMA table_info(session_pending_events)`).all<{ name: string }>();
+  return new Set((rows.results ?? []).map((row) => row.name));
 }

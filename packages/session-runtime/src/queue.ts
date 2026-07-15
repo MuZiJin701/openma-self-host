@@ -35,6 +35,7 @@ export interface SessionPendingQueue {
     event: SessionEvent;
   }): Promise<QueueReceipt>;
   peek(sessionId: string): Promise<SessionPendingRow | null>;
+  claim?(sessionId: string, leaseId: string, leaseMs?: number): Promise<SessionPendingRow | null>;
   promote(
     sessionId: string,
     pendingSeq: number,

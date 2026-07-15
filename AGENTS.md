@@ -50,6 +50,8 @@
   queue lifecycle metrics are emitted through the existing `/metrics` surface.
 - Postgres lease semantics, crash/SSE integration tests, and multi-replica
   validation remain open.
+- A two-replica Postgres/MinIO Compose topology is provided for Task 8; it is
+  not yet locally executed in this environment.
 - Native SQLite-backed tests are currently blocked in this workspace because
   `better-sqlite3` has no installed Node 24 binary and the C++ build toolchain
   is unavailable; pure queue tests and TypeScript checks remain runnable.

@@ -1,0 +1,61 @@
+services:
+  oma-server-a:
+    build:
+      context: .
+      dockerfile: apps/main-node/Dockerfile
+    ports: ["8787:8787"]
+    environment: &oma-env
+      DATABASE_URL: postgres://oma:oma@postgres:5432/oma
+      AUTH_DISABLED: "1"
+      PLATFORM_ROOT_SECRET: local-multi-replica-secret
+      SANDBOX_WORKDIR: /app/data/sandboxes
+      FILES_S3_ENDPOINT: http://minio:9000
+      FILES_S3_BUCKET: files
+      FILES_S3_ACCESS_KEY: minioadmin
+      FILES_S3_SECRET_KEY: minioadmin
+      MEMORY_S3_ENDPOINT: http://minio:9000
+      MEMORY_S3_BUCKET: memory
+      MEMORY_S3_ACCESS_KEY: minioadmin
+      MEMORY_S3_SECRET_KEY: minioadmin
+      WORKER_MAX_ACTIVE: "2"
+      TENANT_MAX_ACTIVE: "1"
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+
+  oma-server-b:
+    build:
+      context: .
+      dockerfile: apps/main-node/Dockerfile
+    ports: ["8788:8787"]
+    environment: *oma-env
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: oma
+      POSTGRES_PASSWORD: oma
+      POSTGRES_DB: oma
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oma -d oma"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      "until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+      mc mb --ignore-existing local/files; mc mb --ignore-existing local/memory"

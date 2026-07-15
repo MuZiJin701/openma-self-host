@@ -56,6 +56,15 @@ timeout). Queue and turn lifecycle counters/histograms are exposed at
 `/metrics`; set `METRICS_BIND_TOKEN` when the endpoint is not behind a trusted
 reverse proxy.
 
+## Postgres multi-replica validation
+
+The intended validation topology is in
+`docker-compose.postgres-multi.yml`: two Node replicas share Postgres and
+MinIO-compatible BlobStore buckets. Run it only where Docker is available,
+then exercise the same Session through ports `8787` and `8788` and verify no
+duplicate `event_id`, cross-tenant reads, or SSE resume gaps. The Compose file
+is a validation harness, not a production secret configuration.
+
 ## Model Cards and Environments
 
 Model Cards are tenant-scoped and are resolved by the Node runtime through the
