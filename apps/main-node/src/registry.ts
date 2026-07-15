@@ -169,9 +169,18 @@ export class SessionRegistry {
       }
     }
 
-    // Durable queue rows survive a process crash independently of the
-    // in-memory registry. Re-arm every session that still has pending work.
-    for (const sessionId of await this.deps.pendingQueue.threadsWithPending()) {
+    // Durable queue/ledger rows survive a process crash independently of the
+    // in-memory registry. Re-arm every session that still has pending work or
+    // a promoted turn whose harness did not reach completion.
+    const pendingSessions = await this.deps.pendingQueue.threadsWithPending();
+    const promotedSessions = await this.deps.sql
+      .prepare(`SELECT DISTINCT session_id FROM session_turn_runs WHERE status IN ('promoted', 'running')`)
+      .all<{ session_id: string }>();
+    const recoverySessions = new Set([
+      ...pendingSessions,
+      ...(promotedSessions.results ?? []).map((row) => row.session_id),
+    ]);
+    for (const sessionId of recoverySessions) {
       const row = await this.deps.sql
         .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
         .bind(sessionId)

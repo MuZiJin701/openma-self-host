@@ -387,6 +387,24 @@ export async function ensureSchema(
       ON session_pending_events (session_id, pending_seq)
       WHERE cancelled_at IS NULL;
   `);
+  await sql.exec(`
+    CREATE TABLE IF NOT EXISTS session_turn_runs (
+      session_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      pending_seq BIGINT NOT NULL,
+      session_thread_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      data TEXT NOT NULL,
+      status TEXT NOT NULL,
+      promoted_at BIGINT NOT NULL,
+      started_at BIGINT,
+      completed_at BIGINT,
+      PRIMARY KEY (session_id, event_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_turn_runs_recovery
+      ON session_turn_runs (session_id, pending_seq)
+      WHERE status IN ('promoted', 'running');
+  `);
 }
 
 async function readSessionEventColumns(

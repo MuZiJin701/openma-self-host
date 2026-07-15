@@ -1,6 +1,7 @@
 import type { SessionEvent } from "@open-managed-agents/shared";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 import type { SqlDialect } from "./index";
+type SessionTurnLedgerStatus = "promoted" | "running" | "completed" | "failed";
 
 export interface SqlQueueReceipt {
   eventId: string;
@@ -30,6 +31,8 @@ interface DbPendingRow {
   enqueued_at: number;
   cancelled_at: number | null;
 }
+
+interface DbLedgerRow extends DbPendingRow { status: SessionTurnLedgerStatus }
 
 /** SQL-backed pending queue for the Node runtime. */
 export class SqlPendingQueue {
@@ -132,6 +135,9 @@ export class SqlPendingQueue {
       .first<{ seq: number }>();
 
     if (duplicate) {
+      const event = JSON.parse(row.data) as SessionEvent & { session_thread_id?: string; processed_at?: string };
+      event.processed_at ??= new Date().toISOString();
+      event.session_thread_id ??= row.session_thread_id;
       await this.sql
         .batch([
           this.sql
@@ -140,6 +146,12 @@ export class SqlPendingQueue {
                 WHERE session_id = ? AND pending_seq = ?`,
             )
             .bind(sessionId, pendingSeq),
+          this.sql.prepare(
+            `INSERT INTO session_turn_runs
+               (session_id, event_id, pending_seq, session_thread_id, type, data, status, promoted_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)
+             ON CONFLICT (session_id, event_id) DO NOTHING`,
+          ).bind(sessionId, row.event_id, pendingSeq, row.session_thread_id, row.type, JSON.stringify(event), Date.now()),
         ]);
       return null;
     }
@@ -176,8 +188,35 @@ export class SqlPendingQueue {
             WHERE session_id = ? AND pending_seq = ?`,
         )
         .bind(sessionId, pendingSeq),
+      this.sql
+        .prepare(
+          `INSERT INTO session_turn_runs
+             (session_id, event_id, pending_seq, session_thread_id, type, data, status, promoted_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'promoted', ?)
+           ON CONFLICT (session_id, event_id) DO NOTHING`,
+        )
+        .bind(sessionId, row.event_id, pendingSeq, row.session_thread_id, row.type, data, processedAt),
     ]);
     return toPendingRow({ ...row, data });
+  }
+
+  async promoted(sessionId: string): Promise<SqlPendingRow[]> {
+    const rows = await this.sql.prepare(
+      `SELECT session_id, pending_seq, session_thread_id, type, event_id, data,
+              promoted_at AS enqueued_at, NULL AS cancelled_at, status
+         FROM session_turn_runs
+        WHERE session_id = ? AND status IN ('promoted', 'running')
+        ORDER BY pending_seq ASC`,
+    ).bind(sessionId).all<DbLedgerRow>();
+    return (rows.results ?? []).map(toPendingRow);
+  }
+
+  async markTurn(sessionId: string, eventId: string, status: SessionTurnLedgerStatus): Promise<void> {
+    await this.sql.prepare(
+      `UPDATE session_turn_runs SET status = ?, started_at = CASE WHEN ? = 'running' THEN COALESCE(started_at, ?) ELSE started_at END,
+              completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END
+         WHERE session_id = ? AND event_id = ?`,
+    ).bind(status, status, Date.now(), status, Date.now(), sessionId, eventId).run();
   }
 
   async cancelAll(sessionId: string): Promise<SqlPendingRow[]> {

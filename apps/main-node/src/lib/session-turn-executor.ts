@@ -111,9 +111,12 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
   ): Promise<void> {
     while (true) {
       const row = await this.queue.peek(sessionId);
-      if (!row) return;
-      const promoted = await this.queue.promote(sessionId, row.pendingSeq);
-      if (!promoted) continue;
+      let promoted = row ? await this.queue.promote(sessionId, row.pendingSeq) : null;
+      if (!promoted) {
+        const recovered = await this.queue.promoted?.(sessionId);
+        if (!recovered?.length) return;
+        promoted = recovered[0]!;
+      }
 
       const controller = new AbortController();
       this.active.set(sessionId, {
@@ -121,6 +124,7 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
         pendingSeq: promoted.pendingSeq,
       });
       try {
+        await this.queue.markTurn?.(sessionId, (promoted.eventId), "running");
         const event = JSON.parse(promoted.data) as SessionEvent;
         const context =
           defaults.tenantId && defaults.agentId
@@ -149,7 +153,9 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
         } else {
           await this.runner.run(input, controller.signal);
         }
+        await this.queue.markTurn?.(sessionId, promoted.eventId, "completed");
       } catch (error) {
+        await this.queue.markTurn?.(sessionId, promoted.eventId, "failed");
         this.logger.error?.(
           { error, sessionId, pendingSeq: promoted.pendingSeq },
           "session turn failed",

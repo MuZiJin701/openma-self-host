@@ -35,8 +35,9 @@ Inbound `user.message`, `user.tool_confirmation`, and
 `session_pending_events` table. `SerialSessionTurnExecutor` drains one
 Session FIFO at a time while allowing independent Sessions to run in parallel.
 Promotion writes the canonical `session_events` row and removes the pending row
-in one SQL batch; duplicate event IDs are ignored. The startup registry scan
-re-arms Sessions with active pending rows.
+in one SQL batch and records a `session_turn_runs` ledger row; duplicate event
+IDs are ignored. The startup registry scan re-arms Sessions with active pending
+rows and promoted/running ledger rows that did not reach completion.
 
 The pure scheduler check is:
 

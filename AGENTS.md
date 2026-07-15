@@ -31,8 +31,9 @@
   FIFO with cross-session concurrency, duplicate event IDs are idempotent, and
   queued events are promoted before the harness starts.
 - The queue is not yet a complete production recovery implementation: SQL
-  promotion currently batches canonical insert + queue delete, while
-  cross-replica leasing/`SKIP LOCKED`, confirmation delivery, metrics, and
+  promotion now records a durable turn ledger alongside canonical insert +
+  queue delete, allowing a promoted-but-not-started turn to be replayed on
+  bootstrap. Cross-replica leasing/`SKIP LOCKED`, confirmation delivery, and
   crash/SSE integration tests remain open.
 - Tenant-scoped Model Cards and Environment CRUD are now wired into the Node
   service. Model Card creation requires `PLATFORM_ROOT_SECRET`; the public API

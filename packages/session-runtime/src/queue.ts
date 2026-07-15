@@ -27,6 +27,8 @@ export interface SessionPendingRow {
   cancelledAt: number | null;
 }
 
+export type SessionTurnLedgerStatus = "promoted" | "running" | "completed" | "failed";
+
 export interface SessionPendingQueue {
   enqueue(input: {
     sessionId: string;
@@ -44,6 +46,9 @@ export interface SessionPendingQueue {
   ): Promise<SessionPendingRow[]>;
   countActive(sessionId: string): Promise<number>;
   threadsWithPending(): Promise<string[]>;
+  /** Turns promoted to the canonical log but not durably completed. */
+  promoted?(sessionId: string): Promise<SessionPendingRow[]>;
+  markTurn?(sessionId: string, eventId: string, status: SessionTurnLedgerStatus): Promise<void>;
 }
 
 export interface SessionTurnRunner {
@@ -77,6 +82,7 @@ export interface SessionTurnExecutor {
 export class InMemorySessionPendingQueue implements SessionPendingQueue {
   private rows: SessionPendingRow[] = [];
   private nextPendingSeq = 1;
+  private ledger = new Map<string, SessionPendingRow & { status: SessionTurnLedgerStatus }>();
 
   async enqueue(input: {
     sessionId: string;
@@ -137,7 +143,20 @@ export class InMemorySessionPendingQueue implements SessionPendingQueue {
     );
     if (index < 0) return null;
     const [row] = this.rows.splice(index, 1);
+    this.ledger.set(`${row!.sessionId}:${row!.eventId}`, { ...row!, status: "promoted" });
     return { ...row };
+  }
+
+  async promoted(sessionId: string): Promise<SessionPendingRow[]> {
+    return [...this.ledger.values()]
+      .filter((row) => row.sessionId === sessionId && row.status !== "completed" && row.status !== "failed")
+      .sort((a, b) => a.pendingSeq - b.pendingSeq)
+      .map(({ status: _status, ...row }) => ({ ...row }));
+  }
+
+  async markTurn(sessionId: string, eventId: string, status: SessionTurnLedgerStatus): Promise<void> {
+    const row = this.ledger.get(`${sessionId}:${eventId}`);
+    if (row) row.status = status;
   }
 
   async cancelAll(sessionId: string): Promise<SessionPendingRow[]> {

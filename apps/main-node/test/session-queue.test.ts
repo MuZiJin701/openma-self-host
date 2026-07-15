@@ -14,6 +14,20 @@ function message(id: string, text = id) {
 }
 
 describe("SerialSessionTurnExecutor", () => {
+  it("replays a promoted turn after a crash before harness start", async () => {
+    const queue = new InMemorySessionPendingQueue();
+    const receipt = await queue.enqueue({ sessionId: "crash", event: message("crash-1") });
+    await queue.promote("crash", receipt.pendingSeq);
+    const seen: string[] = [];
+    const executor = new SerialSessionTurnExecutor(queue, {
+      run: async (input) => { seen.push(input.event.id!); },
+    }, {}, { resolveContext: async () => ({ tenantId: "tenant-a", agentId: "agent-a" }) });
+    await executor.recover("crash");
+    await executor.waitForIdle("crash");
+    expect(seen).toEqual(["crash-1"]);
+    expect(await queue.promoted?.("crash")).toEqual([]);
+  });
+
   it("runs messages FIFO and never overlaps within one session", async () => {
     const queue = new InMemorySessionPendingQueue();
     const order: string[] = [];
