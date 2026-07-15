@@ -21,6 +21,16 @@ export {
   type HarnessRunFn,
 } from "./machine";
 
+export {
+  InMemorySessionPendingQueue,
+  type QueueReceipt,
+  type SessionPendingQueue,
+  type SessionPendingRow,
+  type SessionTurnExecutor,
+  type SessionTurnInput,
+  type SessionTurnRunner,
+} from "./queue";
+
 export type {
   SessionRouter,
   SessionInitParams,

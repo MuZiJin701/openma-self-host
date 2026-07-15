@@ -24,6 +24,7 @@ import type {
   SessionStreamHandle,
 } from "@open-managed-agents/session-runtime";
 import type { SessionRegistry } from "../registry.js";
+import { SessionTurnConflictError } from "../registry.js";
 import type { EventStreamHub } from "./event-stream-hub.js";
 
 interface NodeSessionRouterDeps {
@@ -51,7 +52,7 @@ export class NodeSessionRouter implements SessionRouter {
   async destroy(sessionId: string): Promise<void> {
     // Best-effort sandbox teardown via registry. On Node this is a no-op
     // when the entry isn't realized yet.
-    this.deps.registry.interrupt(sessionId);
+    await this.deps.registry.interrupt(sessionId);
     // Hub disposal — drop SSE writers.
     this.deps.hub.closeSession?.(sessionId);
   }
@@ -60,35 +61,60 @@ export class NodeSessionRouter implements SessionRouter {
     sessionId: string,
     event: SessionEvent,
   ): Promise<SessionAppendResult> {
-    const log = this.deps.newEventLog(sessionId);
     if (event.type === "user.interrupt") {
-      this.deps.registry.interrupt(sessionId);
+      await this.deps.registry.interrupt(sessionId);
       return { status: 202, body: '{"accepted":true,"interrupted":true}' };
     }
-    await log.appendAsync(event);
-    const stored = await log.getEventsAsync();
-    const last = stored[stored.length - 1];
-    this.deps.hub.publish(sessionId, last);
 
-    if (event.type === "user.message") {
-      // Look up the agent_id off the sessions row; SessionRegistry
-      // expects (sid, tenantId, agentId, event).
+    const isQueuedInput =
+      event.type === "user.message" ||
+      event.type === "user.tool_confirmation" ||
+      event.type === "user.custom_tool_result";
+    if (isQueuedInput) {
       const row = await this.deps.sql
         .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
         .bind(sessionId)
         .first<{ tenant_id: string; agent_id: string | null }>();
-      if (row?.agent_id) {
-        const entry = await this.deps.registry.getOrCreate(sessionId, row.tenant_id);
-        void entry.machine
-          .runHarnessTurn(
-            row.agent_id,
-            event as import("@open-managed-agents/shared").UserMessageEvent,
-          )
-          .catch((err) => {
-            moduleLog.error({ err, op: "node_session_router.harness_turn_failed", session_id: sessionId }, "harness turn failed");
-          });
+      if (!row?.agent_id) {
+        return { status: 404, body: JSON.stringify({ error: "session not found" }) };
+      }
+      try {
+        const receipt = await this.deps.registry.enqueueEvent(
+          sessionId,
+          row.tenant_id,
+          row.agent_id,
+          event,
+        );
+        this.deps.hub.publish(sessionId, {
+          type: "system.user_message_pending",
+          event_id: receipt.eventId,
+          pending_seq: receipt.pendingSeq,
+          enqueued_at: Date.now(),
+          session_thread_id:
+            (event as { session_thread_id?: string }).session_thread_id ??
+            "sthr_primary",
+          event,
+        } as unknown as SessionEvent);
+        return {
+          status: 202,
+          body: JSON.stringify({ accepted: true, ...receipt }),
+        };
+      } catch (error) {
+        if (error instanceof SessionTurnConflictError) {
+          return {
+            status: 409,
+            body: JSON.stringify({ error: error.code, message: error.message }),
+          };
+        }
+        throw error;
       }
     }
+
+    const log = this.deps.newEventLog(sessionId);
+    await log.appendAsync(event);
+    const stored = await log.getEventsAsync();
+    const last = stored[stored.length - 1];
+    if (last) this.deps.hub.publish(sessionId, last);
     return { status: 202, body: JSON.stringify({ accepted: true }) };
   }
 
@@ -233,7 +259,7 @@ export class NodeSessionRouter implements SessionRouter {
   }
 
   async interrupt(sessionId: string): Promise<void> {
-    this.deps.registry.interrupt(sessionId);
+    await this.deps.registry.interrupt(sessionId);
   }
 
   async exec(
@@ -382,14 +408,21 @@ export class NodeSessionRouter implements SessionRouter {
     sessionId: string,
     _opts?: { rawSearch?: string },
   ): Promise<{ status: number; body: string }> {
-    // Node SqlEventLog doesn't yet have the dual-table queue surface
-    // (CF SessionDO holds pending in its DO sqlite). For now return an
-    // empty page so SDK callers don't 500 — pending events still drive
-    // the harness via in-process registry, just no read API for them.
-    void sessionId;
+    const rows = await this.deps.registry.listPending(sessionId);
     return {
       status: 200,
-      body: JSON.stringify({ data: [], has_more: false }),
+      body: JSON.stringify({
+        data: rows.map((row) => ({
+          pending_seq: row.pendingSeq,
+          enqueued_at: row.enqueuedAt,
+          session_thread_id: row.sessionThreadId,
+          type: row.type,
+          event_id: row.eventId,
+          data: row.data,
+          cancelled_at: row.cancelledAt,
+        })),
+        has_more: false,
+      }),
     };
   }
 

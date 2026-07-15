@@ -28,6 +28,9 @@ import {
 } from "@open-managed-agents/session-runtime";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 import { SqlStreamRepo, type SqlEventLog } from "@open-managed-agents/event-log/sql";
+import { SqlPendingQueue } from "@open-managed-agents/event-log/sql";
+import { SerialSessionTurnExecutor } from "./lib/session-turn-executor.js";
+import type { QueueReceipt, SessionTurnExecutor } from "@open-managed-agents/session-runtime";
 import type { SandboxExecutor } from "@open-managed-agents/sandbox";
 import type {
   OrchestratorMemoryMount,
@@ -85,6 +88,7 @@ export interface SessionRegistryDeps {
     model: LanguageModel;
     sessionId: string;
     eventLog: SqlEventLog;
+    abortSignal?: AbortSignal;
   }): Promise<unknown>;
 
   /** Sandbox workdir root, e.g. /app/data/sandboxes. Per-session dirs
@@ -95,12 +99,15 @@ export interface SessionRegistryDeps {
    *  so its appendChunk picks the right JSON-array append (json_insert
    *  on sqlite, jsonb concat on postgres). */
   sqlDialect?: "sqlite" | "postgres";
+
+  pendingQueue: SqlPendingQueue;
 }
 
-interface SessionEntry {
+export interface SessionEntry {
   machine: SessionStateMachine;
   sandbox: SandboxExecutor;
   eventLog: SqlEventLog;
+  executor: SessionTurnExecutor;
 }
 
 export class SessionRegistry {
@@ -140,18 +147,31 @@ export class SessionRegistry {
       )
       .all<{ id: string; tenant_id: string }>();
     const rows = r.results ?? [];
-    if (rows.length === 0) return;
-    log.info({ op: "session_registry.bootstrap", recovering: rows.length }, `bootstrap: recovering ${rows.length} interrupted session(s)`);
-    for (const row of rows) {
-      const entry = await this.getOrCreate(row.id, row.tenant_id);
-      try {
-        await entry.machine.onWake();
-      } catch (err) {
-        log.error(
-          { err, op: "session_registry.bootstrap.on_wake_failed", session_id: row.id },
-          `bootstrap onWake(${row.id}) failed`,
-        );
+    if (rows.length > 0) {
+      log.info({ op: "session_registry.bootstrap", recovering: rows.length }, `bootstrap: recovering ${rows.length} interrupted session(s)`);
+      for (const row of rows) {
+        const entry = await this.getOrCreate(row.id, row.tenant_id);
+        try {
+          await entry.machine.onWake();
+        } catch (err) {
+          log.error(
+            { err, op: "session_registry.bootstrap.on_wake_failed", session_id: row.id },
+            `bootstrap onWake(${row.id}) failed`,
+          );
+        }
       }
+    }
+
+    // Durable queue rows survive a process crash independently of the
+    // in-memory registry. Re-arm every session that still has pending work.
+    for (const sessionId of await this.deps.pendingQueue.threadsWithPending()) {
+      const row = await this.deps.sql
+        .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
+        .bind(sessionId)
+        .first<{ tenant_id: string; agent_id: string | null }>();
+      if (!row?.agent_id) continue;
+      const entry = await this.getOrCreate(sessionId, row.tenant_id);
+      await entry.executor.recover(sessionId);
     }
   }
 
@@ -179,22 +199,36 @@ export class SessionRegistry {
    * The machine's adapter handles emitting the session-side
    * agent.message_stream_end(status="aborted") event chain.
    */
-  interrupt(sessionId: string): void {
+  async interrupt(sessionId: string): Promise<void> {
     const p = this.map.get(sessionId);
-    if (!p) return;
-    p.then((entry) => {
-      const m = entry.machine as unknown as {
-        interrupt?: () => void;
-        abortInFlight?: () => void;
-      };
-      if (typeof m.interrupt === "function") m.interrupt();
-      else if (typeof m.abortInFlight === "function") m.abortInFlight();
-      // If the machine doesn't expose either method, the user.interrupt
-      // event is appended to the log by the route handler (P3 wires the
-      // actual abort plumbing into SessionStateMachine).
-    }).catch(() => {
-      /* getOrCreate failed — nothing to abort */
-    });
+    if (!p) {
+      await this.deps.pendingQueue.cancelAll(sessionId);
+      return;
+    }
+    const entry = await p;
+    await entry.executor.interrupt(sessionId);
+  }
+
+  async enqueueEvent(
+    sessionId: string,
+    tenantId: string,
+    agentId: string,
+    event: SessionEvent,
+  ): Promise<QueueReceipt> {
+    const entry = await this.getOrCreate(sessionId, tenantId);
+    if (
+      event.type !== "user.message" &&
+      !entry.machine.hasInflightTurn()
+    ) {
+      throw new SessionTurnConflictError(
+        `session ${sessionId} has no turn waiting for ${event.type}`,
+      );
+    }
+    return entry.executor.enqueue(sessionId, tenantId, agentId, event);
+  }
+
+  async listPending(sessionId: string, includeCancelled = false) {
+    return this.deps.pendingQueue.list(sessionId, includeCancelled);
   }
 
   // ── helpers ─────────────────────────────────────────────────────────
@@ -269,6 +303,41 @@ export class SessionRegistry {
       publish: (event: SessionEvent) => this.deps.hub.publish(sessionId, event),
     });
 
-    return { machine, sandbox, eventLog };
+    const executor = new SerialSessionTurnExecutor(
+      this.deps.pendingQueue,
+      {
+        run: async (input, signal) => {
+          // Promotion makes the user event canonical. Broadcast the
+          // persisted row before starting the harness so /messages streams
+          // can observe the exact event-log sequence and resume from it.
+          const canonical = (await eventLog.getEventsAsync()).find(
+            (event) =>
+              (event as { id?: string }).id ===
+              (input.event as { id?: string }).id,
+          );
+          this.deps.hub.publish(sessionId, canonical ?? input.event);
+          if (input.event.type !== "user.message") {
+            throw new Error(
+              `${input.event.type} delivery is not wired into the active harness turn`,
+            );
+          }
+          await machine.runHarnessTurn(
+            input.agentId,
+            input.event as UserMessageEvent,
+            signal,
+          );
+        },
+      },
+      {
+        error: (context, message) =>
+          log.error(context as Record<string, unknown>, message),
+      },
+    );
+
+    return { machine, sandbox, eventLog, executor };
   }
+}
+
+export class SessionTurnConflictError extends Error {
+  readonly code = "session_turn_conflict";
 }

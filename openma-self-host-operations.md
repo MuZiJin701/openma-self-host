@@ -27,3 +27,21 @@ The official sibling repository is a read-only reference. Upstream changes are f
 ## Tenant-scoped services
 
 Node keeps a legacy `kv` fixture for compatibility but production route wiring also exposes `kvForTenant(tenantId)`. Authenticated request paths should resolve KV through the request tenant and must not reuse the process-wide `default` adapter.
+
+## Session queue
+
+Inbound `user.message`, `user.tool_confirmation`, and
+`user.custom_tool_result` events are written to the additive
+`session_pending_events` table. `SerialSessionTurnExecutor` drains one
+Session FIFO at a time while allowing independent Sessions to run in parallel.
+Promotion writes the canonical `session_events` row and removes the pending row
+in one SQL batch; duplicate event IDs are ignored. The startup registry scan
+re-arms Sessions with active pending rows.
+
+The pure scheduler check is:
+
+```text
+pnpm --filter @open-managed-agents/main-node exec vitest run test/session-queue.test.ts
+```
+
+The SQLite integration tests require a working `better-sqlite3` native binding.

@@ -51,7 +51,7 @@ import { createSqliteFileService } from "@open-managed-agents/files-store";
 import { createSqliteEvalRunService } from "@open-managed-agents/evals-store";
 import { createSqliteEnvironmentService } from "@open-managed-agents/environments-store";
 import { toFileRecord } from "@open-managed-agents/files-store";
-import { SqlEventLog } from "@open-managed-agents/event-log/sql";
+import { SqlEventLog, SqlPendingQueue } from "@open-managed-agents/event-log/sql";
 import type { SessionEvent } from "@open-managed-agents/shared";
 import { generateEventId } from "@open-managed-agents/shared";
 import { DefaultHarness } from "@open-managed-agents/agent/harness/default-loop";
@@ -204,6 +204,7 @@ if (usePostgres) {
   migrate(drizzleDb as never, { migrationsFolder });
 }
 await ensureEventLogSchema(sql, dialect);
+const pendingQueue = new SqlPendingQueue(sql, dialect);
 
 // Integrations subsystem boot is gated on PLATFORM_ROOT_SECRET (used to
 // encrypt OAuth tokens etc.). Tables are part of the consolidated baseline
@@ -484,6 +485,7 @@ const sessionRegistry = new SessionRegistry({
   buildSandbox,
   sandboxWorkdirRoot: process.env.SANDBOX_WORKDIR ?? "./data/sandboxes",
   sqlDialect: dialect,
+  pendingQueue,
   buildModel: (agent) => {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY env var required for harness turns");
@@ -508,7 +510,7 @@ const sessionRegistry = new SessionRegistry({
     const h = new DefaultHarness();
     return { run: (ctx: unknown) => h.run(ctx as HarnessContext) };
   },
-  buildHarnessContext: async (input) => {
+      buildHarnessContext: async (input) => {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY env var required for harness turns");
     const runtime = new NodeHarnessRuntime({
@@ -516,6 +518,7 @@ const sessionRegistry = new SessionRegistry({
       log: input.eventLog,
       hub,
       sandbox: input.sandbox,
+      abortSignal: input.abortSignal,
     });
     await runtime.refreshHistory();
     const rawSystemPrompt = input.agent.system ?? "";

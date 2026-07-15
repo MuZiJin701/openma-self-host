@@ -62,12 +62,14 @@ export interface NodeHarnessRuntimeOptions {
    *  LocalSubprocessSandbox for local dev, E2BSandbox / CloudflareSandbox
    *  in production. */
   sandbox: SandboxExecutor;
+  abortSignal?: AbortSignal;
 }
 
 export class NodeHarnessRuntime implements HarnessRuntime {
   history: SqlHistoryStore;
   sandbox: SandboxExecutor;
   pendingConfirmations?: string[];
+  abortSignal?: AbortSignal;
   /**
    * Per-runtime serial chain for SqlEventLog writes. The harness fires
    * many `broadcast()` calls in close succession (span_start, span_first_
@@ -86,6 +88,7 @@ export class NodeHarnessRuntime implements HarnessRuntime {
   constructor(private opts: NodeHarnessRuntimeOptions) {
     this.history = new SqlHistoryStore(opts.log);
     this.sandbox = opts.sandbox;
+    this.abortSignal = opts.abortSignal;
   }
 
   /** Call before each harness.run() so getEvents reflects DB state. */

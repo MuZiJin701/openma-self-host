@@ -13,6 +13,8 @@ import type { SessionEvent } from "@open-managed-agents/shared";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 import type { EventLogRepo, StreamRepo, StreamRow } from "../ports";
 
+export { SqlPendingQueue } from "./pending";
+
 export type SqlDialect = "sqlite" | "postgres";
 
 /**
@@ -51,15 +53,11 @@ export class SqlEventLog implements EventLogRepo {
 
   async appendAsync(event: SessionEvent): Promise<void> {
     const ts = Date.now();
-    // Mirror cf-do/index.ts: user.* are pending until drained;
-    // everything else is "ingested" at write time. session_thread_id
-    // defaults to primary; events from sub-agent threads carry their
-    // own session_thread_id on the wire.
-    const isPending =
-      event.type === "user.message" ||
-      event.type === "user.tool_confirmation" ||
-      event.type === "user.custom_tool_result";
-    const processedAt = isPending ? null : ts;
+    // Queue-input events are routed through SqlPendingQueue by the Node
+    // router. This adapter only writes canonical, already-promoted events;
+    // direct callers therefore cannot accidentally create a second pending
+    // representation in session_events.
+    const processedAt = ts;
     const threadId =
       (event as unknown as { session_thread_id?: string }).session_thread_id ??
       "sthr_primary";
@@ -358,6 +356,36 @@ export async function ensureSchema(
   await sql.exec(`
     CREATE INDEX IF NOT EXISTS idx_session_streams_status
       ON session_streams (session_id, status);
+  `);
+  await sql.exec(
+    dialect === "postgres"
+      ? `CREATE TABLE IF NOT EXISTS session_pending_events (
+           pending_seq BIGSERIAL PRIMARY KEY,
+           session_id TEXT NOT NULL,
+           session_thread_id TEXT NOT NULL,
+           type TEXT NOT NULL,
+           event_id TEXT NOT NULL,
+           data TEXT NOT NULL,
+           enqueued_at BIGINT NOT NULL,
+           cancelled_at BIGINT,
+           UNIQUE (session_id, event_id)
+         );`
+      : `CREATE TABLE IF NOT EXISTS session_pending_events (
+           pending_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+           session_id TEXT NOT NULL,
+           session_thread_id TEXT NOT NULL,
+           type TEXT NOT NULL,
+           event_id TEXT NOT NULL,
+           data TEXT NOT NULL,
+           enqueued_at BIGINT NOT NULL,
+           cancelled_at BIGINT,
+           UNIQUE (session_id, event_id)
+         );`,
+  );
+  await sql.exec(`
+    CREATE INDEX IF NOT EXISTS idx_session_pending_active
+      ON session_pending_events (session_id, pending_seq)
+      WHERE cancelled_at IS NULL;
   `);
 }
 

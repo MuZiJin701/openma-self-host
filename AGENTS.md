@@ -26,4 +26,16 @@
 
 - Independent repository initialized from the official baseline.
 - Tenant-scoped KV service selection is implemented and covered by unit tests.
-- Session queue, tenant resource APIs, Model Cards, Skills, Environment execution, WorkerPool, and multi-replica validation remain to be implemented.
+- The Node session queue foundation is implemented: user turn inputs use
+  `session_pending_events`, `SerialSessionTurnExecutor` provides per-session
+  FIFO with cross-session concurrency, duplicate event IDs are idempotent, and
+  queued events are promoted before the harness starts.
+- The queue is not yet a complete production recovery implementation: SQL
+  promotion currently batches canonical insert + queue delete, while
+  cross-replica leasing/`SKIP LOCKED`, confirmation delivery, metrics, and
+  crash/SSE integration tests remain open.
+- Tenant resource APIs, Model Cards, Skills, Environment execution,
+  WorkerPool, and multi-replica validation remain to be implemented.
+- Native SQLite-backed tests are currently blocked in this workspace because
+  `better-sqlite3` has no installed Node 24 binary and the C++ build toolchain
+  is unavailable; pure queue tests and TypeScript checks remain runnable.

@@ -101,6 +101,7 @@ export interface SessionMachineDeps {
     sandbox: SandboxExecutor;
     tools: unknown;
     model: LanguageModel;
+    abortSignal?: AbortSignal;
   }): Promise<unknown>;
 
   /** Publish a synthetic event to the hub (e.g. session.error,
@@ -140,7 +141,9 @@ export class SessionStateMachine {
   async runHarnessTurn(
     agentId: string,
     userMessage: UserMessageEvent,
+    abortSignal?: AbortSignal,
   ): Promise<void> {
+    if (abortSignal?.aborted) throw new Error("session turn interrupted");
     const agent = await this.deps.loadAgent(agentId);
     if (!agent) throw new Error(`agent ${agentId} not found`);
 
@@ -173,6 +176,7 @@ export class SessionStateMachine {
         sandbox: this.deps.sandbox,
         tools,
         model,
+        abortSignal,
       });
 
       const harness = this.deps.buildHarness();
