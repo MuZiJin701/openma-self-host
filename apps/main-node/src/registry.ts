@@ -37,6 +37,7 @@ import type {
   SandboxOrchestrator,
 } from "@open-managed-agents/sandbox/orchestrator";
 import type { AgentService } from "@open-managed-agents/agents-store";
+import type { SkillService } from "@open-managed-agents/skills-store";
 import type { MemoryStoreService } from "@open-managed-agents/memory-store";
 import type {
   AgentConfig,
@@ -53,6 +54,8 @@ export interface SessionRegistryDeps {
   sql: SqlClient;
   hub: EventStreamHub;
   agentsService: AgentService;
+  /** Tenant-scoped immutable skill store used during sandbox provisioning. */
+  skillsService?: SkillService;
   memoryService: MemoryStoreService;
   /** Sandbox provisioning — vault outbound, mounts, backup-restore.
    *  Replaces the per-runtime buildMemoryMounter / buildSessionOutputsMounter
@@ -241,6 +244,13 @@ export class SessionRegistry {
   ): Promise<SessionEntry> {
     const sandboxWorkdir = join(this.deps.sandboxWorkdirRoot, sessionId);
     const sandbox = await this.deps.buildSandbox(sessionId, sandboxWorkdir);
+    const sessionRow = await this.deps.sql
+      .prepare(`SELECT agent_id FROM sessions WHERE id = ? AND tenant_id = ?`)
+      .bind(sessionId, tenantId)
+      .first<{ agent_id: string | null }>();
+    const sessionAgent = sessionRow?.agent_id
+      ? await this.deps.agentsService.get({ tenantId, agentId: sessionRow.agent_id })
+      : null;
 
     // Resolve the per-session memory bindings + outputs flag, then hand
     // the whole bundle to the orchestrator. The orchestrator owns
@@ -267,6 +277,7 @@ export class SessionRegistry {
       mountOutputs: true,
       backup: { restoreOnWarm: true },
     });
+    await this.mountAgentSkills(sandbox, tenantId, sessionAgent?.skills);
 
     const eventLog = this.deps.newEventLog(sessionId);
     const streams = new SqlStreamRepo(this.deps.sql, sessionId, this.deps.sqlDialect ?? "sqlite");
@@ -373,6 +384,35 @@ export class SessionRegistry {
     );
 
     return { machine, sandbox, eventLog, executor };
+  }
+
+  private async mountAgentSkills(
+    sandbox: SandboxExecutor,
+    tenantId: string,
+    bindings: AgentConfig["skills"],
+  ): Promise<void> {
+    if (!this.deps.skillsService || !bindings?.length) return;
+    for (const binding of bindings) {
+      const item = binding as unknown as { skill_id?: string; version?: string };
+      if (!item.skill_id) continue;
+      const skill = await this.deps.skillsService.get(tenantId, item.skill_id);
+      if (!skill || skill.archived_at) continue;
+      const version = item.version ?? skill.latest_version;
+      if (!version) continue;
+      const row = await this.deps.skillsService.getVersion(tenantId, skill.id, version);
+      if (!row) continue;
+      for (const file of row.files) {
+        await sandbox.writeFile(`/mnt/skills/${skill.id}/${version}/${file.filename}`, file.content);
+      }
+    }
+    // The directory is a fixed, provisioned read-only view for the Agent.
+    // subprocess is trusted-only; failure to chmod is surfaced as a warning
+    // rather than pretending it is a security boundary.
+    try {
+      await sandbox.exec("chmod -R a-w -- /mnt/skills 2>/dev/null || true", 5_000);
+    } catch (error) {
+      log.warn({ op: "skills.mount_readonly_failed", tenant_id: tenantId, err: error }, "skill mount could not be made read-only");
+    }
   }
 }
 

@@ -38,7 +38,11 @@
   service. Model Card creation requires `PLATFORM_ROOT_SECRET`; the public API
   never returns plaintext credentials, and global environment-variable fallback
   is limited to `AUTH_DISABLED=1`.
-- Skills, Environment execution beyond `env-local-runtime`, WorkerPool, and
+- Tenant-scoped Skills Store/API is now implemented. Skill versions are
+  immutable, files use the shared BlobStore key layout, Agent bindings are
+  tenant/version validated, and selected files are provisioned under the
+  sandbox's fixed `/mnt/skills/<skill>/<version>/` read-only view on startup.
+- Environment execution beyond `env-local-runtime`, WorkerPool, and
   multi-replica validation remain to be implemented.
 - Native SQLite-backed tests are currently blocked in this workspace because
   `better-sqlite3` has no installed Node 24 binary and the C++ build toolchain

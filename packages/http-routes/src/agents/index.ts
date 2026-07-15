@@ -136,6 +136,11 @@ export interface AgentRoutesDeps {
     tenantId: string,
     model: string | { id: string; speed?: string },
   ) => Promise<{ valid: boolean; error?: string }>;
+  /** Optional tenant-scoped skill/version validation for self-host. */
+  validateSkills?: (
+    tenantId: string,
+    skills: AgentConfig["skills"],
+  ) => Promise<{ valid: boolean; error?: string }>;
   /** Optional field-size cap check. CF passes apps/main/src/lib/limits;
    *  Node currently passes nothing. */
   validateAgentLimits?: (body: unknown) => { ok: boolean; error?: string };
@@ -210,6 +215,10 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
         const ar = await deps.validateModel(tenantId, aux);
         if (!ar.valid) return c.json({ error: `aux_model: ${ar.error}` }, 400);
       }
+    }
+    if (deps.validateSkills && body.skills) {
+      const skills = await deps.validateSkills(tenantId, body.skills);
+      if (!skills.valid) return c.json({ error: skills.error }, 400);
     }
 
     const row = await services.agents.create({
@@ -412,6 +421,10 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       const eff = body.model ?? existing.model;
       const r = await deps.validateModel(tenantId, eff);
       if (!r.valid) return c.json({ error: r.error }, 400);
+    }
+    if (deps.validateSkills && body.skills !== undefined && body.skills !== null) {
+      const skills = await deps.validateSkills(tenantId, body.skills);
+      if (!skills.valid) return c.json({ error: skills.error }, 400);
     }
     if (!isLocalRuntime && deps.validateModel && body.aux_model !== undefined) {
       const aux =

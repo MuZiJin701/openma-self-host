@@ -50,6 +50,7 @@
     "@open-managed-agents/scheduler": "workspace:*",
     "@open-managed-agents/schema": "workspace:*",
     "@open-managed-agents/session-runtime": "workspace:*",
+    "@open-managed-agents/skills-store": "workspace:*",
     "@open-managed-agents/sessions-store": "workspace:*",
     "@open-managed-agents/shared": "workspace:*",
     "@open-managed-agents/slack": "workspace:*",

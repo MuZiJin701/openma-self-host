@@ -57,3 +57,14 @@ metadata and key previews. A process-level provider key is accepted only when
 Environment resources are tenant-scoped CRUD records. Session execution is
 currently restricted to the built-in `env-local-runtime`; requesting another
 environment returns `environment_not_supported`.
+
+## Skills
+
+Skills are stored with tenant-qualified SQL rows and BlobStore keys under
+`t/<tenant>/skills/<skill>/<version>/`. A version cannot be overwritten. The
+Node service uses localfs through `FILES_BLOB_DIR` by default and can use the
+existing S3-compatible backend when `FILES_S3_*` is configured. During session
+provisioning, an Agent's selected skill versions are copied to
+`/mnt/skills/<skill>/<version>/`; the Node subprocess adapter attempts to make
+that tree read-only. This is a trusted-Agent convenience, not a security
+sandbox.

@@ -51,6 +51,8 @@ import { createSqliteFileService } from "@open-managed-agents/files-store";
 import { createSqliteEvalRunService } from "@open-managed-agents/evals-store";
 import { createSqliteEnvironmentService } from "@open-managed-agents/environments-store";
 import { createSqliteModelCardService } from "@open-managed-agents/model-cards-store";
+import { SqlSkillService } from "@open-managed-agents/skills-store";
+import { SELF_HOST_SKILLS_SCHEMA_SQL } from "@open-managed-agents/db-schema/node-sqlite";
 import { toFileRecord } from "@open-managed-agents/files-store";
 import { SqlEventLog, SqlPendingQueue } from "@open-managed-agents/event-log/sql";
 import type { SessionEvent } from "@open-managed-agents/shared";
@@ -76,6 +78,7 @@ import {
   buildIntegrationsGatewayRoutes,
   buildModelCardRoutes,
   buildEnvironmentRoutes,
+  buildSkillRoutes,
   type RouteServices,
   type ApiKeyStorage,
   type ApiKeyMeta,
@@ -207,6 +210,7 @@ if (usePostgres) {
   migrate(drizzleDb as never, { migrationsFolder });
 }
 await ensureEventLogSchema(sql, dialect);
+await sql.exec(SELF_HOST_SKILLS_SCHEMA_SQL);
 const pendingQueue = new SqlPendingQueue(sql, dialect);
 
 // Integrations subsystem boot is gated on PLATFORM_ROOT_SECRET (used to
@@ -425,6 +429,8 @@ if (
   filesBlobDescription = `localfs ${filesBlobDir}`;
 }
 
+const skillsService = new SqlSkillService(sql, filesBlob);
+
 const workspaceBackups = new NodeWorkspaceBackupService({
   sql,
   blobs: filesBlob,
@@ -496,6 +502,7 @@ const sessionRegistry = new SessionRegistry({
   sql,
   hub,
   agentsService,
+  skillsService,
   memoryService,
   sandboxOrchestrator,
   newEventLog,
@@ -811,6 +818,18 @@ v1.route("/agents", buildAgentRoutes({
       ? { valid: true }
       : { valid: false, error: `No model card with model_id "${modelId}" for this tenant` };
   },
+  validateSkills: async (tenantId, skills) => {
+    for (const binding of skills ?? []) {
+      const item = binding as { skill_id?: string; version?: string };
+      if (!item.skill_id) return { valid: false, error: "skill_id is required" };
+      const skill = await skillsService.get(tenantId, item.skill_id);
+      if (!skill || skill.archived_at) return { valid: false, error: `Skill "${item.skill_id}" is not available for this tenant` };
+      if (item.version && !(await skillsService.getVersion(tenantId, item.skill_id, item.version))) {
+        return { valid: false, error: `Skill version "${item.skill_id}@${item.version}" is not available for this tenant` };
+      }
+    }
+    return { valid: true };
+  },
 }));
 v1.route("/model_cards", buildModelCardRoutes({
   modelCards: modelCardsService,
@@ -818,6 +837,7 @@ v1.route("/model_cards", buildModelCardRoutes({
   encryptionConfigured: Boolean(platformRootSecret),
 }));
 v1.route("/environments", buildEnvironmentRoutes({ environments: environmentsService }));
+v1.route("/skills", buildSkillRoutes({ skills: skillsService }));
 const sessionRouter = new NodeSessionRouter({
   sql,
   hub,
@@ -895,7 +915,6 @@ v1.route("/evals", buildEvalRoutes({
 
 // Runtime registration remains intentionally unsupported in self-host.
 v1.get("/runtimes", (c) => c.json({ data: [] }));
-v1.get("/skills", (c) => c.json({ data: [] }));
 v1.get("/models/list", (c) =>
   c.json({
     data: [

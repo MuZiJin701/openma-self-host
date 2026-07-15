@@ -644,6 +644,9 @@ importers:
       '@open-managed-agents/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@open-managed-agents/skills-store':
+        specifier: workspace:*
+        version: link:../../packages/skills-store
       '@open-managed-agents/slack':
         specifier: workspace:*
         version: link:../../packages/slack
@@ -1100,6 +1103,9 @@ importers:
       '@open-managed-agents/shared':
         specifier: workspace:*
         version: link:../shared
+      '@open-managed-agents/skills-store':
+        specifier: workspace:*
+        version: link:../skills-store
       '@open-managed-agents/sql-client':
         specifier: workspace:*
         version: link:../sql-client
@@ -1518,6 +1524,18 @@ importers:
       nanoid:
         specifier: ^5.1.0
         version: 5.1.7
+
+  packages/skills-store:
+    dependencies:
+      '@open-managed-agents/blob-store':
+        specifier: workspace:*
+        version: link:../blob-store
+      '@open-managed-agents/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@open-managed-agents/sql-client':
+        specifier: workspace:*
+        version: link:../sql-client
 
   packages/slack:
     dependencies:
