@@ -286,9 +286,7 @@ export function EvalRunsList() {
         status === "any" ? (
           <p>
             Submit one with{" "}
-            <code className="px-1 py-0.5 bg-bg-surface rounded text-fg-muted">POST /v1/evals/runs</code>{" "}
-            or{" "}
-            <code className="px-1 py-0.5 bg-bg-surface rounded text-fg-muted">npx tsx rl/tasks/terminal-bench/run-cloud.ts</code>.
+            <code className="px-1 py-0.5 bg-bg-surface rounded text-fg-muted">POST /v1/evals/runs</code>.
           </p>
         ) : (
           "Try clearing the status filter."

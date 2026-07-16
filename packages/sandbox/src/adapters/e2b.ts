@@ -304,7 +304,7 @@ export class E2BSandboxExecutor implements SandboxExecutor {
     if (opts.readOnly) {
       // Best-effort chmod -w; s3fs respects FUSE-level read-only via
       // a remount which the sandbox SDK doesn't expose. Document the
-      // residual gap in docs/self-host.md.
+      // residual gap in openma-self-host-operations.md.
       await this.runOrThrow(
         `sudo chmod -R a-w ${shellEscape(sourcePath)} 2>/dev/null || true`,
       );

@@ -1,4 +1,0 @@
-aiohttp>=3.9.0
-
-# For local_trainer.py (Mac MPS / CPU):
-# pip install torch transformers peft accelerate

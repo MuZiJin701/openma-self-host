@@ -480,8 +480,7 @@ export interface OutcomeVerifierSpec {
 
 /**
  * @deprecated Legacy spelling — emit `span.outcome_evaluation_end` instead.
- * Kept as a type alias so old persisted events parse, and rl/collector
- * keeps reading historical sessions. New emit sites use
+ * Kept as a type alias so old persisted events parse. New emit sites use
  * `SpanOutcomeEvaluationEndEvent`.
  */
 export interface OutcomeEvaluationEvent extends EventBase {

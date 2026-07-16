@@ -63,10 +63,18 @@
 - Console 已恢复为由 `apps/main-node` 静态托管；Linear/GitHub/Slack 页面、菜单、
   集成头像和 `/v1/integrations/*` 客户端均已删除，Node 不再挂载或启动 Integrations
   服务。自部署 Console 的 MCP 凭据录入只接受显式 token，不再打开 OAuth 授权回调。
+- `apps/web` 官方网站源码已从 self-host Git 工作树移除；本机曾残留的旧
+  `node_modules` 目录也已清理，不属于当前项目构建图。
+- 已完成第一轮瘦身：移除 RL/Terminal-Bench、旧 Cloudflare 部署脚本、顶层旧 Worker/E2E
+  测试和不再使用的测试配置；保留 Node 主链测试、Session Runtime/CAP 测试和 PostgreSQL
+  多副本验证脚本。
 - 已验证 Node 22 下原生 SQLite 测试可运行；Windows 下 Node 24 当前没有可用的
   `better-sqlite3` 预编译二进制，推荐使用 Node 22。Workspace 文件提升测试和
   Windows subprocess shell 兼容性已通过验证；Workspace backup 的 Unix tar 测试
   仍需在 Linux/Docker 中验证。
+- 本机 WSL2 Ubuntu 已运行（版本 2），但 Ubuntu 内当前没有 Docker CLI/Engine；Windows
+  `docker` 命令仍连接 Docker Desktop 的 `desktop-linux` context。直接在 WSL 安装
+  Docker Engine 是可行且适合本项目 Linux/Docker 测试的方向，尚未执行安装或切换。
 
 ## 当前改造顺序
 

@@ -261,7 +261,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
    *
    * read_only enforcement: chmod -w on the target dir's contents at
    * mount time (best effort — root-equivalent in container can still
-   * write; documented in docs/self-host.md). The harness write tool also
+   * write; documented in openma-self-host-operations.md). The harness write tool also
    * checks `assertWritable` for a clearer error.
    */
   async mountMemoryStore(opts: {

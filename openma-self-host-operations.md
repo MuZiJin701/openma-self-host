@@ -7,6 +7,48 @@
 - Node 默认端口为 `8787`；工作区级部署可能将宿主机 `8008` 映射到容器端口。
 - 持久化状态位于 `data/`；日常开发或迁移过程中不得删除该目录。
 
+## WSL2 直接运行 Docker
+
+本机已验证 WSL2 Ubuntu 正在运行，版本为 2；但 Ubuntu 内尚未安装 Docker CLI/Engine。
+Windows 侧的 `docker version` 当前连接的是 Docker Desktop 的 `desktop-linux` context。
+
+直接在 WSL2 内安装 Docker Engine 对本项目是可行且合理的：项目目标运行环境是 Linux，
+SQLite 原生依赖、`subprocess`、Docker Compose 和 PostgreSQL 行为会更接近实际部署环境，
+也可以完全不依赖 Docker Desktop。建议使用 WSL2 Ubuntu 的 systemd + Docker Engine +
+Compose plugin 组合，不要同时把同一个测试流程指向两个 Docker daemon。
+
+推荐准备步骤（尚未在本机执行）：
+
+```bash
+# WSL 内确认发行版和 systemd；需要时在 /etc/wsl.conf 启用：
+[boot]
+systemd=true
+
+# 重启 WSL 后，按 Docker 官方 Ubuntu 文档安装 docker-ce、docker-ce-cli、
+# containerd.io、docker-buildx-plugin 和 docker-compose-plugin。
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+
+# 重新进入 WSL 后确认使用本机 Engine，而不是 Docker Desktop context。
+docker context use default
+docker version
+docker compose version
+```
+
+WSL 内建议将 self-host 工作副本放在 Linux 文件系统，例如 `~/src/openma-self-host`，
+不要长期在 `/mnt/d/...` 上运行高频 TypeScript、SQLite 或 `node_modules` 操作。官方仓库
+仍只读，只复制或克隆 `openma-self-host` 到 WSL 内进行构建。完成准备后可运行：
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm db:check
+docker compose -f docker-compose.yml up --build
+```
+
+如果暂时不安装 WSL Docker Engine，当前 Windows Docker Desktop 方案仍可用；两者都能
+完成 Compose 构建，但 WSL Engine 更适合作为本项目后续的默认 Linux 验证环境。
+
 ## 运行时默认值
 
 - `SANDBOX_PROVIDER=subprocess`。
@@ -38,10 +80,10 @@ pnpm db:check
 pnpm test:e2e
 ```
 
-本环境已验证 Docker Desktop 4.82.0、Docker Engine 29.6.1、Compose v5.3.0
-和 WSL2 backend。双副本测试环境不发布 Postgres 端口到宿主机，测试命令在 Node
-容器内执行；运行镜像默认用户是 `node`，Vitest 临时目录需要使用专用测试镜像
-或测试时显式使用 root。
+Windows 侧已验证 Docker Desktop 4.82.0、Docker Engine 29.6.1、Compose v5.3.0
+和 WSL2 backend；WSL 内独立 Docker Engine 尚未验证。双副本测试环境不发布 Postgres
+端口到宿主机，测试命令在 Node 容器内执行；运行镜像默认用户是 `node`，Vitest 临时目录
+需要使用专用测试镜像或测试时显式使用 root。
 
 官方兄弟仓库是只读参考。只有在手动评估 upstream 改动后，才允许选择性集成。
 
@@ -130,6 +172,15 @@ Skill 使用带租户前缀的 SQL 行和 BlobStore key 保存，路径格式为
 后端。Session provision 阶段会把 Agent 选中的 Skill 版本复制到
 `/mnt/skills/<skill>/<version>/`；Node subprocess 适配器会尝试将该目录设置为
 只读。这是可信 Agent 的便利功能，不是安全沙箱。
+
+## 瘦身边界
+
+当前仓库只保留 self-host 所需的 Node、Console、oma-vault、基础 packages、项目文档、
+Session/Runtime 测试和 Postgres 多副本验证脚本。官方网站 `apps/web`、Cloudflare Worker
+应用、Integrations、RL/Terminal-Bench、旧顶层 Worker/E2E 测试及对应部署配置均不属于
+当前构建图。若后续继续瘦身，优先审计 Console 中非核心的 Vault、Memory、Evals 和 Dreams
+页面及其 API；在确认不影响 Agent/Session/Workspace/Model Cards/Skills 后再删除，避免
+误删默认 Agent Loop 的共享 store。
 
 ## 构建检查
 
