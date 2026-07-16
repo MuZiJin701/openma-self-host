@@ -32,6 +32,8 @@ FIFO 串行；官方 `open-managed-agents/` 仅作为只读 upstream 基线。
 - Model Card、Skill、Environment 主链的完整集成验证、共享 Workspace、完整 crash/SSE
   集成验证和 tool confirmation delivery 尚未完成。
 - 不新增 Environment 执行后端、Runtime 或分布式调度抽象。
+- 不启用 Linear/GitHub/Slack Integrations、OAuth、Webhook、Publication 或 InstallBridge；
+  相关通用包和旧表暂时保留但不进入 self-host 运行时。
 - 本机 `better-sqlite3` 缺少 Node 24 native binding，且没有可用 C++ 构建工具链；纯 Node 测试、typecheck 和 schema check 可运行。
 
 ## Verification record

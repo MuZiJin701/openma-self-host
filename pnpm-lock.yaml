@@ -584,24 +584,12 @@ importers:
       '@open-managed-agents/files-store':
         specifier: workspace:*
         version: link:../../packages/files-store
-      '@open-managed-agents/github':
-        specifier: workspace:*
-        version: link:../../packages/github
       '@open-managed-agents/http-routes':
         specifier: workspace:*
         version: link:../../packages/http-routes
-      '@open-managed-agents/integrations-adapters-node':
-        specifier: workspace:*
-        version: link:../../packages/integrations-adapters-node
-      '@open-managed-agents/integrations-core':
-        specifier: workspace:*
-        version: link:../../packages/integrations-core
       '@open-managed-agents/kv-store':
         specifier: workspace:*
         version: link:../../packages/kv-store
-      '@open-managed-agents/linear':
-        specifier: workspace:*
-        version: link:../../packages/linear
       '@open-managed-agents/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
@@ -647,9 +635,6 @@ importers:
       '@open-managed-agents/skills-store':
         specifier: workspace:*
         version: link:../../packages/skills-store
-      '@open-managed-agents/slack':
-        specifier: workspace:*
-        version: link:../../packages/slack
       '@open-managed-agents/sql-client':
         specifier: workspace:*
         version: link:../../packages/sql-client
@@ -661,7 +646,7 @@ importers:
         version: link:../../packages/vaults-store
       ai:
         specifier: ^6.0.158
-        version: 6.0.158(zod@4.4.3)
+        version: 6.0.158(zod@4.3.6)
       better-auth:
         specifier: ^1.6.3
         version: 1.6.3(@cloudflare/workers-types@4.20260410.1)(@opentelemetry/api@1.9.0)(better-sqlite3@11.10.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260410.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@11.10.0)(kysely@0.28.16)(pg@8.20.0)(postgres@3.4.9))(pg@8.20.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vitest@4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.6.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.6.0)(typescript@5.9.3))(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)))
@@ -868,7 +853,7 @@ importers:
     devDependencies:
       '@agentclientprotocol/sdk':
         specifier: ^0.20.0
-        version: 0.20.0(zod@4.4.3)
+        version: 0.20.0(zod@4.3.6)
       '@inquirer/checkbox':
         specifier: ^5.1.4
         version: 5.1.4(@types/node@22.19.17)
@@ -1480,7 +1465,7 @@ importers:
         version: link:../sql-client
       ai:
         specifier: ^6.0.158
-        version: 6.0.158(zod@4.4.3)
+        version: 6.0.158(zod@4.3.6)
       nanoid:
         specifier: ^5.1.0
         version: 5.1.9
@@ -2408,6 +2393,7 @@ packages:
 
   '@daytonaio/sdk@0.171.0':
     resolution: {integrity: sha512-k+HauFkfOTnpupHNJty8pkKS8ChfxEpWLF+zc7VvePiotjJf6Is1KVpgUkPG1NOdWbExdtTRVXIKchI6+16PVg==}
+    deprecated: 'Moved to @daytona/sdk, same API, no breaking changes. Please update: npm uninstall @daytonaio/sdk && npm i @daytona/sdk'
 
   '@dotenvx/dotenvx@1.66.0':
     resolution: {integrity: sha512-qlQFhHUjhRDybrinqLAD0MClVZDOrsq80O8eD5iSjz3Qa/4f3Jg7SQrOaSobrRyP1QaWIYLGtGpj2c7H0D8NUw==}
@@ -2454,11 +2440,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -3877,6 +3863,7 @@ packages:
   '@opentelemetry/propagation-utils@0.30.16':
     resolution: {integrity: sha512-ZVQ3Z/PQ+2GQlrBfbMMMT0U7MzvYZLCPP800+ooyaBqm4hMvuQHfP028gB9/db0mwkmyEAMad9houukUVxhwcw==}
     engines: {node: '>=14'}
+    deprecated: The use of process spans has been removed from Messaging Semantic Conventions. It is now recommended to connect pub/sub spans via Span Links. See https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/ for details.
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
 
@@ -9831,6 +9818,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -10591,9 +10579,9 @@ snapshots:
     dependencies:
       zod: 3.25.76
 
-  '@agentclientprotocol/sdk@0.20.0(zod@4.4.3)':
+  '@agentclientprotocol/sdk@0.20.0(zod@4.3.6)':
     dependencies:
-      zod: 4.4.3
+      zod: 4.3.6
 
   '@ai-sdk/anthropic@3.0.69(zod@4.3.6)':
     dependencies:
@@ -10615,13 +10603,6 @@ snapshots:
       '@vercel/oidc': 3.1.0
       zod: 4.3.6
 
-  '@ai-sdk/gateway@3.0.95(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.23(zod@4.4.3)
-      '@vercel/oidc': 3.1.0
-      zod: 4.4.3
-
   '@ai-sdk/mcp@1.0.37(zod@4.3.6)':
     dependencies:
       '@ai-sdk/provider': 3.0.9
@@ -10641,13 +10622,6 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.0.6
       zod: 4.3.6
-
-  '@ai-sdk/provider-utils@4.0.23(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@standard-schema/spec': 1.1.0
-      eventsource-parser: 3.0.6
-      zod: 4.4.3
 
   '@ai-sdk/provider-utils@4.0.24(zod@4.3.6)':
     dependencies:
@@ -15852,14 +15826,6 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.23(zod@4.3.6)
       '@opentelemetry/api': 1.9.0
       zod: 4.3.6
-
-  ai@6.0.158(zod@4.4.3):
-    dependencies:
-      '@ai-sdk/gateway': 3.0.95(zod@4.4.3)
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.23(zod@4.4.3)
-      '@opentelemetry/api': 1.9.0
-      zod: 4.4.3
 
   ai@6.0.182(zod@4.4.3):
     dependencies:

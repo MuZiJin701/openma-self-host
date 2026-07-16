@@ -45,6 +45,12 @@ pnpm test:e2e
 
 官方兄弟仓库是只读参考。只有在手动评估 upstream 改动后，才允许选择性集成。
 
+## 当前不启用的功能
+
+Self-host Node 不挂载 Linear、GitHub、Slack Integrations，也不启动 OAuth、Webhook、
+Publication、InstallBridge 或 Integrations scheduler。`oma-vault` 仍然启用，用于租户凭据
+的出站注入。Integrations 数据库表目前只是未使用的 schema，不属于运行时功能。
+
 ## 租户范围服务
 
 Node 为兼容旧测试 fixture 保留 `kv`，同时在生产路由中提供

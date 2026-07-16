@@ -56,6 +56,9 @@
 - Model Cards、Skills、Environment 的基础主链已接入：Agent 校验 Model Card/Skill 归属，
   Session 固定使用 `env-local-runtime`；资源和凭据隔离测试已通过。仍需补真实 HTTP 主链
   和 Agent 实际调用验证。
+- Integrations（Linear/GitHub/Slack、OAuth、Webhook、Publication、InstallBridge）已从
+  self-host Node 运行时移除；`oma-vault` 仍保留，因为它属于凭据注入链路，不是 Integrations。
+  Integrations 相关数据库表和通用源码包暂时保留但不挂载，避免引入无必要的迁移复杂度。
 - 当前工作区的原生 SQLite 测试受限于：没有可用的 Node 24
   `better-sqlite3` 原生二进制，且缺少 C++ 构建工具链；纯队列测试和 TypeScript
   检查仍可运行。

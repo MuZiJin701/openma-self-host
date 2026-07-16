@@ -74,8 +74,6 @@ import {
   buildMeRoutes,
   buildApiKeyRoutes,
   buildEvalRoutes,
-  buildIntegrationsRoutes,
-  buildIntegrationsGatewayRoutes,
   buildModelCardRoutes,
   buildEnvironmentRoutes,
   buildSkillRoutes,
@@ -83,23 +81,10 @@ import {
   type ApiKeyStorage,
   type ApiKeyMeta,
   type ApiKeyRecord,
-  type InstallProxyForwarder,
   mintApiKeyOnStorage,
   sha256Hex,
 } from "@open-managed-agents/http-routes";
-import {
-  buildNodeRepos,
-  SqlSlackInstallationRepo,
-  SqlSlackPublicationRepo,
-  SqlSlackAppRepo,
-  WebCryptoAesGcm,
-  CryptoIdGenerator,
-  type NodeReposEnv,
-} from "@open-managed-agents/integrations-adapters-node";
-import {
-  NodeInstallBridge,
-  buildNodeProvidersForRequest,
-} from "./lib/node-install-bridge.js";
+import { WebCryptoAesGcm } from "./lib/web-crypto-aes-gcm.js";
 import { OmaVaultResolver } from "@open-managed-agents/oma-cap-adapter";
 import { NodeSessionRouter } from "./lib/node-session-router.js";
 import { nodeOutputsAdapter } from "./lib/node-outputs-adapter.js";
@@ -164,8 +149,8 @@ let sql: SqlClient;
 let backendDescription: string;
 // drizzleDb is the dependency-inversion seam new-style adapters take.
 // Constructed once at the composition root from the right concrete driver.
-// Existing SqlClient is still built alongside for the legacy applySchema /
-// integrations adapters until those finish migrating.
+// Existing SqlClient is still built alongside for the legacy SQL adapters
+// that have not yet moved to the Drizzle dependency-inversion seam.
 import type { OmaDb } from "@open-managed-agents/db-schema";
 let drizzleDb: OmaDb<Record<string, unknown>>;
 if (usePostgres) {
@@ -937,90 +922,6 @@ v1.get("/models/list", (c) =>
     ],
   }),
 );
-v1.get("/integrations/github/credentials", (c) => c.json({ data: [] }));
-v1.get("/integrations/linear/credentials", (c) => c.json({ data: [] }));
-v1.get("/integrations/slack/credentials", (c) => c.json({ data: [] }));
-
-// Real integration CRUD + lookup (linear/github/slack publications,
-// installations, dispatch rules). Active only when PLATFORM_ROOT_SECRET is
-// set — otherwise the routes 503 with a remediation message. Install-proxy
-// endpoints (start-a1 / credentials / handoff-link / personal-token) return
-// 503 because the OAuth/install gateway is not yet ported to Node (P4
-// follow-up); the read endpoints work standalone.
-// Real integration CRUD + lookup (linear/github/slack publications,
-// installations, dispatch rules). Active only when PLATFORM_ROOT_SECRET is
-// set — otherwise the routes 503 with a remediation message. The
-// install-proxy endpoints (start-a1 / credentials / handoff-link /
-// personal-token) call into the in-process InstallBridge, mirroring the
-// CF /linear/publications/* etc. wire shapes verbatim.
-const integrationsInternalToken = process.env.INTEGRATIONS_INTERNAL_TOKEN ?? null;
-const gatewayOrigin = process.env.GATEWAY_ORIGIN ?? process.env.PUBLIC_BASE_URL ?? "http://localhost:8787";
-let installBridge: NodeInstallBridge | null = null;
-if (platformRootSecret) {
-  installBridge = new NodeInstallBridge({
-    sql,
-    db: drizzleDb,
-    platformRootSecret,
-    gatewayOrigin: gatewayOrigin.replace(/\/+$/, ""),
-    vaults: vaultService,
-    credentials: credentialService,
-    sessions: sessionsService,
-    agents: agentsService,
-    resolveTenantId: async (userId) => {
-      const row = await sql
-        .prepare(
-          `SELECT tenant_id FROM membership WHERE user_id = ? ORDER BY created_at ASC, tenant_id ASC LIMIT 1`,
-        )
-        .bind(userId)
-        .first<{ tenant_id: string }>();
-      return row?.tenant_id ?? null;
-    },
-    appendUserEvent: async (sessionId, _tenantId, _agentId, event) => {
-      // Webhook → session-resume drives the same NodeSessionRouter the
-      // public POST /v1/sessions/:id/events route uses, so the harness
-      // wakes up via the existing event-driven runtime.
-      await sessionRouter.appendEvent(sessionId, event);
-    },
-  });
-}
-
-if (platformRootSecret) {
-  const integrationsRepoEnv: NodeReposEnv = {
-    sql,
-    db: drizzleDb,
-    PLATFORM_ROOT_SECRET: platformRootSecret,
-  };
-  v1.route(
-    "/integrations",
-    buildIntegrationsRoutes({
-      bags: () => {
-        const repos = buildNodeRepos(integrationsRepoEnv);
-        const slackCrypto = new WebCryptoAesGcm(platformRootSecret, "integrations.tokens");
-        const slackIds = new CryptoIdGenerator();
-        return {
-          linear: {
-            installations: repos.linearInstallations,
-            publications: repos.linearPublications,
-            apps: repos.apps,
-            dispatchRules: repos.dispatchRules,
-          },
-          github: {
-            installations: repos.githubInstallations,
-            publications: repos.githubPublications,
-            githubApps: repos.githubApps,
-          },
-          slack: {
-            installations: new SqlSlackInstallationRepo(drizzleDb, slackCrypto, slackIds),
-            publications: new SqlSlackPublicationRepo(drizzleDb, slackIds, slackCrypto),
-            apps: new SqlSlackAppRepo(drizzleDb, slackCrypto, slackIds),
-          },
-        };
-      },
-      installProxy: installBridge ? bridgeAsInstallProxy(installBridge) : null,
-    }),
-  );
-}
-
 // ── Files API (subset of apps/main/src/routes/files.ts) ──
 //
 // CF mounts a richer files surface with synthesized session-output ids
@@ -1122,71 +1023,6 @@ app.route("/v1/oma/evals", buildEvalRoutes({
   agents: agentsService,
 }));
 
-// /v1/oma/integrations mirror — same factory used twice. New OMA-only
-// endpoints (if any) get added in the package, not here.
-if (platformRootSecret) {
-  const integrationsRepoEnvOma: NodeReposEnv = {
-    sql,
-    db: drizzleDb,
-    PLATFORM_ROOT_SECRET: platformRootSecret,
-  };
-  app.route(
-    "/v1/oma/integrations",
-    buildIntegrationsRoutes({
-      bags: () => {
-        const repos = buildNodeRepos(integrationsRepoEnvOma);
-        const slackCrypto = new WebCryptoAesGcm(platformRootSecret, "integrations.tokens");
-        const slackIds = new CryptoIdGenerator();
-        return {
-          linear: {
-            installations: repos.linearInstallations,
-            publications: repos.linearPublications,
-            apps: repos.apps,
-            dispatchRules: repos.dispatchRules,
-          },
-          github: {
-            installations: repos.githubInstallations,
-            publications: repos.githubPublications,
-            githubApps: repos.githubApps,
-          },
-          slack: {
-            installations: new SqlSlackInstallationRepo(drizzleDb, slackCrypto, slackIds),
-            publications: new SqlSlackPublicationRepo(drizzleDb, slackIds, slackCrypto),
-            apps: new SqlSlackAppRepo(drizzleDb, slackCrypto, slackIds),
-          },
-        };
-      },
-      installProxy: installBridge ? bridgeAsInstallProxy(installBridge) : null,
-    }),
-  );
-}
-
-// ─── Integrations gateway (OAuth callbacks, setup pages, Linear MCP,
-// GitHub internal refresh, webhooks) — mounted on `app` (NOT under /v1)
-// because the upstream OAuth/webhook URLs are at /linear/oauth/...,
-// /linear-setup/..., /linear/webhook/..., etc. Active only when
-// PLATFORM_ROOT_SECRET is set (encryption requires it). The bridge
-// constructs providers per-request off the same Container builder used
-// by the read-side routes, so a write hits the same underlying tables.
-if (installBridge) {
-  const containers = installBridge.buildContainers();
-  app.route(
-    "/",
-    buildIntegrationsGatewayRoutes({
-      installBridge,
-      jwt: containers.linear.jwt,
-      webhooks: {
-        linear: (req) => buildNodeProvidersForRequest(installBridge!, gatewayOrigin).linear.handleWebhook(req),
-        github: (req) => buildNodeProvidersForRequest(installBridge!, gatewayOrigin).github.handleWebhook(req),
-        slack: (req) => buildNodeProvidersForRequest(installBridge!, gatewayOrigin).slack.handleWebhook(req),
-      },
-      internalSecret: integrationsInternalToken,
-      // Node has no per-tenant rate-limit binding by default; soft-pass.
-      rateLimit: undefined,
-    }),
-  );
-}
-
 // oma-cap-adapter wire — exposes a Resolver against the in-process vault
 // services so a future Node outbound proxy (mirroring CF's mcp-proxy) can
 // inject cap_cli credentials into sandbox traffic. Wired here at the
@@ -1272,10 +1108,7 @@ serve({ fetch: app.fetch, port, hostname: host }, (info) => {
   );
 });
 
-// Cron — eval-tick + memory retention sweep + (when integrations schema is
-// applied) webhook-events retention. Linear dispatch is left un-wired here
-// because main-node doesn't construct a LinearProvider; pass `linearSweeper`
-// when an in-process gateway lands.
+// Cron — eval-tick and memory retention sweep.
 const scheduler = buildNodeScheduler({
   evalServices: {
     agents: agentsService,
@@ -1285,7 +1118,6 @@ const scheduler = buildNodeScheduler({
     kv,
   },
   memory: memoryService,
-  integrationsSql: platformRootSecret ? sql : null,
 });
 await scheduler.start();
 logger.info({ op: "main-node.scheduler.started" }, "scheduler started");
@@ -1321,72 +1153,6 @@ function randomFallback(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-}
-
-/**
- * In-process forwarder for the package's `installProxy` deps. Each subpath
- * (e.g. "linear/publications/start-a1") routes to bridge.startInstallation.
- * Mirrors apps/main/src/routes/integrations.ts but skips the
- * INTEGRATIONS.fetch hop.
- *
- * Linear's publication-first endpoints use distinct subpath shapes:
- *   - POST  linear/publications                       → mode='create-publication'
- *   - PATCH linear/publications/<id>/credentials      → mode='submit-credentials-pub'
- * Slack/GitHub continue using the legacy /start-a1, /credentials,
- * /handoff-link variants until they ship their own publication-first
- * refactors.
- */
-function bridgeAsInstallProxy(bridge: NodeInstallBridge): InstallProxyForwarder {
-  return {
-    async forward({ subpath, body, method }) {
-      // Linear publication-first endpoints first — they share a subpath
-      // prefix with the legacy ones so order matters.
-      const newPub = /^linear\/publications$/.exec(subpath);
-      if (newPub && method === "POST") {
-        const result = await bridge.startInstallation!({
-          provider: "linear",
-          mode: "create-publication",
-          body: (body ?? {}) as Record<string, unknown>,
-        });
-        return new Response(JSON.stringify(result.body), {
-          status: result.status,
-          headers: { "content-type": "application/json" },
-        });
-      }
-      const newCreds = /^linear\/publications\/([^/]+)\/credentials$/.exec(subpath);
-      if (newCreds && (method === "PATCH" || method === "POST")) {
-        const result = await bridge.startInstallation!({
-          provider: "linear",
-          mode: "submit-credentials-pub",
-          body: { ...(body ?? {}), publicationId: newCreds[1] } as Record<string, unknown>,
-        });
-        return new Response(JSON.stringify(result.body), {
-          status: result.status,
-          headers: { "content-type": "application/json" },
-        });
-      }
-
-      const m = /^([^/]+)\/publications\/(start-a1|credentials|handoff-link|personal-token)$/.exec(
-        subpath,
-      );
-      if (!m) {
-        return new Response(
-          JSON.stringify({ error: `unsupported install proxy subpath: ${subpath}` }),
-          { status: 400, headers: { "content-type": "application/json" } },
-        );
-      }
-      const [, provider, mode] = m;
-      const result = await bridge.startInstallation!({
-        provider: provider as "linear" | "github" | "slack",
-        mode: mode as "start-a1" | "credentials" | "handoff-link" | "personal-token",
-        body: (body ?? {}) as Record<string, unknown>,
-      });
-      return new Response(JSON.stringify(result.body), {
-        status: result.status,
-        headers: { "content-type": "application/json" },
-      });
-    },
-  };
 }
 
 /**
