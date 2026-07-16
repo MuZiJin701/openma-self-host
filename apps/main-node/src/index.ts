@@ -293,10 +293,9 @@ const modelCardsService = createSqliteModelCardService(
   },
 );
 const modelResolver = new NodeModelResolver(modelCardsService, {
-  fallbackApiKey: process.env.ANTHROPIC_API_KEY,
-  fallbackBaseUrl: process.env.ANTHROPIC_BASE_URL,
-  fallbackCustomHeaders: parseCustomHeaders(process.env.ANTHROPIC_CUSTOM_HEADERS),
-  allowEnvironmentFallback: process.env.AUTH_DISABLED === "1",
+  // Self-host model credentials come from tenant-scoped Model Cards. Do not
+  // silently fall back to a process-global .env key.
+  allowEnvironmentFallback: false,
 });
 
 const workerPool = new WorkerPool({
@@ -500,6 +499,7 @@ async function buildSandbox(
     {
       sessionId,
       workdir,
+      sharedWorkspace: true,
       memoryRoot: memoryBlobLocalDir ?? "",
       outputsRoot,
     },
@@ -824,7 +824,7 @@ v1.route("/agents", buildAgentRoutes({
     const modelId = typeof model === "string" ? model : model.id;
     const cards = await modelCardsService.list({ tenantId });
     if (cards.every((card) => card.archived_at !== null)) {
-      return { valid: process.env.AUTH_DISABLED === "1" };
+      return { valid: false, error: "No active model card configured for this tenant" };
     }
     return cards.some((card) => card.archived_at === null && card.model_id === modelId)
       ? { valid: true }
@@ -865,6 +865,7 @@ v1.route("/sessions", buildSessionRoutes({
   // as a local runtime. The package's loadEnvironment hook returns a
   // synthetic snapshot so session create doesn't 404 on missing env_id.
   localRuntimeEnvId: "env-local-runtime",
+  forceLocalRuntime: true,
   loadEnvironment: async ({ environmentId }) => {
     if (environmentId !== "env-local-runtime") return null;
     return {
@@ -1309,17 +1310,6 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
-
-function parseCustomHeaders(raw: string | undefined): Record<string, string> | undefined {
-  if (!raw) return undefined;
-  const out: Record<string, string> = {};
-  for (const part of raw.split(",")) {
-    const [name, ...rest] = part.split(":");
-    if (!name || rest.length === 0) continue;
-    out[name.trim()] = rest.join(":").trim();
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
 
 function randomFallback(): string {
   // Pre-bootstrap fallback — logger is built before BetterAuth in the

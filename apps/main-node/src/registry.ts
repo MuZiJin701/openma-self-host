@@ -253,7 +253,13 @@ export class SessionRegistry {
     sessionId: string,
     tenantId: string,
   ): Promise<SessionEntry> {
-    const sandboxWorkdir = join(this.deps.sandboxWorkdirRoot, sessionId);
+    // One stable workspace per tenant. Session-specific temporary mounts are
+    // kept inside the sandbox adapter and are cleaned up independently.
+    const sandboxWorkdir = join(
+      this.deps.sandboxWorkdirRoot,
+      "workspaces",
+      encodeURIComponent(tenantId),
+    );
     const sandbox = await this.deps.buildSandbox(sessionId, sandboxWorkdir);
     const sessionRow = await this.deps.sql
       .prepare(`SELECT agent_id FROM sessions WHERE id = ? AND tenant_id = ?`)

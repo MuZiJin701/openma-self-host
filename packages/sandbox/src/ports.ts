@@ -136,9 +136,10 @@ export interface SandboxExecutor {
 export interface SandboxFactoryContext {
   /** Per-session id — adapters use it for naming, scoping, etc. */
   sessionId: string;
-  /** Per-session host workdir. LocalSubprocess uses this as the cwd
-   *  for child processes; remote / VM adapters can ignore it. */
+  /** Host directory used as the Agent's `/workspace` and cwd. */
   workdir: string;
+  /** Whether the workdir is shared by multiple session sandboxes. */
+  sharedWorkspace?: boolean;
   /** Memory blob root on the host. Adapters that mount memory stores
    *  via symlink (LocalSubprocess) read from this; remote adapters
    *  (Daytona/E2B) typically use s3fs and ignore it. */

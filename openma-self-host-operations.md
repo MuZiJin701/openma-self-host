@@ -11,7 +11,23 @@
 
 - `SANDBOX_PROVIDER=subprocess`。
 - 当前每个 Node Session 都使用 `env-local-runtime`。
-- 第一阶段使用 localfs 作为 BlobStore；多副本共享文件必须使用兼容 S3 的存储。
+- 当前交付使用 SQLite、localfs 和单个 Node 实例；不要求多副本共享文件。
+
+## 用户 Workspace
+
+一个认证用户对应一个租户，也对应一个稳定的 Workspace 根目录。目录不得使用
+Session ID 作为根路径；同一用户创建的多个 Session 必须指向同一个 Workspace，
+因此一个 Session 写入的文件可以被该用户的其他 Session 看到。
+
+推荐目录布局：
+
+```text
+data/sandboxes/workspaces/<tenant-id>/
+data/sandboxes/workspaces/<tenant-id>/.oma-sessions/<session-id>/  # Session 临时挂载
+```
+
+所有 Workspace 路径必须由服务端根据认证后的租户 ID 生成，不能直接接受请求体中的
+任意宿主机路径。不同租户的 Workspace 必须使用不同目录，并通过集成测试验证不可见。
 
 ## 验证命令
 
@@ -63,7 +79,7 @@ Node 使用一个进程级 WorkerPool。`WORKER_MAX_ACTIVE` 限制全局 active 
 直方图通过 `/metrics` 暴露；当该接口没有位于可信反向代理之后时，应设置
 `METRICS_BIND_TOKEN`。
 
-## Postgres 多副本验证
+## 后续可选：Postgres 多副本验证
 
 目标验证拓扑位于 `docker-compose.postgres-multi.yml`：两个 Node 副本共享
 Postgres 和兼容 MinIO 的 BlobStore bucket。该 Compose 文件使用 API-only 构建，
@@ -85,13 +101,14 @@ docker compose -f docker-compose.postgres-multi.yml down
 
 ## Model Cards 与 Environments
 
-Model Card 按租户隔离，由 Node 运行时通过 Model Card Store 解析。创建 Model Card
+Model Card 是当前交付能力，按租户隔离，由 Node 运行时通过 Model Card Store 解析。创建 Model Card
 前必须设置 `PLATFORM_ROOT_SECRET`；服务用它保护 Provider 凭据。API 响应只返回
 安全的卡片元数据和 Key preview。进程级 Provider Key 只允许在
 `AUTH_DISABLED=1` 的本地单用户开发模式下使用。
 
-Environment 资源是按租户隔离的 CRUD 记录。当前 Session 执行仅支持内置的
+Environment 资源是按租户隔离的 CRUD 记录，当前交付只支持内置的
 `env-local-runtime`；请求其他 Environment 会返回 `environment_not_supported`。
+默认执行后端为可信 Agent 使用的 `subprocess`，它不是安全沙箱。
 
 ## Skills
 

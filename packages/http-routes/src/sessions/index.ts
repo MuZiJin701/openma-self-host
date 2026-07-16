@@ -162,6 +162,8 @@ export interface SessionRoutesDeps {
   }) => Promise<EnvironmentConfig | null>;
   /** Local-runtime sentinel — cloud sessions require explicit env_id. */
   localRuntimeEnvId?: string;
+  /** Node self-host mode: every agent runs in the built-in local runtime. */
+  forceLocalRuntime?: boolean;
   /** Vault credential bundling for /init. Both runtimes read from
    *  services.credentials but we keep it pluggable for future variants. */
   fetchVaultCredentials?: (input: {
@@ -341,7 +343,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const agentRow = await services.agents.get({ tenantId: t, agentId });
     if (!agentRow) return c.json({ error: "Agent not found" }, 404);
 
-    const agentIsLocalRuntime = !!agentRow.runtime_binding;
+    const agentIsLocalRuntime = Boolean(deps.forceLocalRuntime || agentRow.runtime_binding);
 
     if (deps.lifecycle?.preCreateGate) {
       const gate = await deps.lifecycle.preCreateGate({

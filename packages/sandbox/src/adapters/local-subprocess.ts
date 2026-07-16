@@ -39,8 +39,12 @@ import { getLogger } from "@open-managed-agents/observability";
 const moduleLogger = getLogger("local-sandbox");
 
 export interface LocalSubprocessSandboxOptions {
-  /** Per-session working directory. Created if missing. */
+  /** Agent workspace directory. Created if missing. */
   workdir: string;
+  /** Session id used to isolate temporary mounts when workdir is shared. */
+  sessionId?: string;
+  /** Preserve workdir on destroy because another session may use it. */
+  sharedWorkspace?: boolean;
   /**
    * Default command timeout in milliseconds (matches the SandboxExecutor
    * port contract). Per-call timeout overrides this.
@@ -90,6 +94,8 @@ interface OutputsMount {
 
 export class LocalSubprocessSandbox implements SandboxExecutor {
   private workdir: string;
+  private mountRoot: string;
+  private sharedWorkspace: boolean;
   private defaultTimeoutMs: number;
   private envVars: Record<string, string> = {};
   private commandSecrets: Array<{ prefix: string; secrets: Record<string, string> }> = [];
@@ -102,6 +108,11 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
 
   constructor(opts: LocalSubprocessSandboxOptions) {
     this.workdir = resolve(opts.workdir);
+    this.sharedWorkspace = opts.sharedWorkspace ?? false;
+    const mountSession = (opts.sessionId ?? "default").replace(/[^A-Za-z0-9_.-]/g, "_");
+    this.mountRoot = this.sharedWorkspace
+      ? join(this.workdir, ".oma-sessions", mountSession)
+      : this.workdir;
     this.defaultTimeoutMs = opts.defaultTimeoutMs ?? 120_000;
     this.memoryRoot = opts.memoryRoot ? resolve(opts.memoryRoot) : null;
     this.outputsRoot = opts.outputsRoot ? resolve(opts.outputsRoot) : null;
@@ -110,6 +121,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
       log: (msg) => moduleLogger.info(msg),
     };
     mkdirSync(this.workdir, { recursive: true });
+    mkdirSync(this.mountRoot, { recursive: true });
   }
 
   async exec(command: string, timeout?: number): Promise<string> {
@@ -254,7 +266,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     const targetDir = join(this.memoryRoot, opts.storeId);
     mkdirSync(targetDir, { recursive: true });
 
-    const mountParent = join(this.workdir, ".mnt", "memory");
+    const mountParent = join(this.mountRoot, ".mnt", "memory");
     mkdirSync(mountParent, { recursive: true });
 
     const workdirSymlink = join(mountParent, opts.storeName);
@@ -274,7 +286,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     // the docker image; silently no-ops on a host that hasn't pre-created
     // a writable /mnt/memory.
     const rootSymlink = `/mnt/memory/${opts.storeName}`;
-    if (this.tryEnsureRootMountDir("/mnt/memory")) {
+    if (!this.sharedWorkspace && this.tryEnsureRootMountDir("/mnt/memory")) {
       try {
         rmSync(rootSymlink, { recursive: true, force: true });
       } catch { /* best-effort */ }
@@ -326,7 +338,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     const targetDir = join(this.outputsRoot, opts.tenantId, opts.sessionId);
     mkdirSync(targetDir, { recursive: true });
 
-    const mountParent = join(this.workdir, ".mnt", "session");
+    const mountParent = join(this.mountRoot, ".mnt", "session");
     mkdirSync(mountParent, { recursive: true });
 
     const workdirSymlink = join(mountParent, "outputs");
@@ -343,7 +355,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     }
 
     const rootSymlink = `/mnt/session/outputs`;
-    if (this.tryEnsureRootMountDir("/mnt/session")) {
+    if (!this.sharedWorkspace && this.tryEnsureRootMountDir("/mnt/session")) {
       try {
         rmSync(rootSymlink, { recursive: true, force: true });
       } catch { /* best-effort */ }
@@ -397,7 +409,10 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     }
     this.processes.clear();
     try {
-      rmSync(this.workdir, { recursive: true, force: true });
+      rmSync(this.sharedWorkspace ? this.mountRoot : this.workdir, {
+        recursive: true,
+        force: true,
+      });
     } catch (err) {
       this.logger.warn(`destroy: failed to remove workdir ${this.workdir}`, err);
     }
@@ -422,7 +437,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     if (normalised.startsWith("/mnt/memory/") || normalised === "/mnt/memory") {
       // When the real /mnt/memory symlink exists, prefer it — bash and
       // tools see the same path.
-      if (this.rootMountExists("/mnt/memory")) return normalised;
+      if (!this.sharedWorkspace && this.rootMountExists("/mnt/memory")) return normalised;
       normalised = normalised === "/mnt/memory"
         ? ".mnt/memory"
         : ".mnt/memory/" + normalised.slice("/mnt/memory/".length);
@@ -430,7 +445,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
       normalised.startsWith("/mnt/session/outputs/") ||
       normalised === "/mnt/session/outputs"
     ) {
-      if (this.rootMountExists("/mnt/session/outputs")) return normalised;
+      if (!this.sharedWorkspace && this.rootMountExists("/mnt/session/outputs")) return normalised;
       normalised = normalised === "/mnt/session/outputs"
         ? ".mnt/session/outputs"
         : ".mnt/session/outputs/" + normalised.slice("/mnt/session/outputs/".length);
@@ -438,7 +453,10 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     else if (normalised === "/workspace") normalised = "";
     else if (normalised.startsWith("/")) normalised = normalised.slice(1);
     if (isAbsolute(normalised)) return normalised; // explicit absolute escape — caller's responsibility
-    return join(this.workdir, normalised);
+    const base = normalised.startsWith(".mnt/") || normalised === ".mnt"
+      ? this.mountRoot
+      : this.workdir;
+    return join(base, normalised);
   }
 
   /** True if a path exists on the host filesystem (symlink-followed). */
@@ -555,6 +573,8 @@ class BackgroundProcess implements ProcessHandle {
 export const sandboxFactory: SandboxFactory = async (ctx) => {
   return new LocalSubprocessSandbox({
     workdir: ctx.workdir,
+    sessionId: ctx.sessionId,
+    sharedWorkspace: ctx.sharedWorkspace,
     memoryRoot: ctx.memoryRoot,
     outputsRoot: ctx.outputsRoot,
   });
