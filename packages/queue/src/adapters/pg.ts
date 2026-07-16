@@ -162,7 +162,7 @@ export function createPgDlq<T>(opts: PgQueueOptions): DeadLetterQueue<T> {
           for (const row of claimed) {
             const msg: QueueMessage<T> = {
               id: row.id,
-              body: row.payload as T,
+              body: decodePayload<T>(row.payload),
               attempts: row.attempts,
               enqueuedAt: row.enqueued_at_ms,
             };
@@ -303,7 +303,7 @@ async function runOne<T>(
 ): Promise<void> {
   const msg: QueueMessage<T> = {
     id: row.id,
-    body: row.payload as T,
+    body: decodePayload<T>(row.payload),
     attempts: row.attempts,
     enqueuedAt: row.enqueued_at_ms,
   };
@@ -340,6 +340,17 @@ async function runOne<T>(
         .bind(Date.now() + backoffMs, row.id)
         .run();
     }
+  }
+}
+
+function decodePayload<T>(payload: unknown): T {
+  if (typeof payload !== "string") return payload as T;
+  try {
+    return JSON.parse(payload) as T;
+  } catch {
+    // Keep the adapter tolerant of legacy rows that were stored as plain
+    // text instead of JSON-encoded objects.
+    return payload as T;
   }
 }
 

@@ -3,12 +3,15 @@ services:
     build:
       context: .
       dockerfile: apps/main-node/Dockerfile
+      args:
+        SKIP_CONSOLE: "1"
     ports: ["8787:8787"]
     environment: &oma-env
       DATABASE_URL: postgres://oma:oma@postgres:5432/oma
       AUTH_DISABLED: "1"
       PLATFORM_ROOT_SECRET: local-multi-replica-secret
       SANDBOX_WORKDIR: /app/data/sandboxes
+      SESSION_OUTPUTS_DIR: /app/data/session-outputs
       FILES_S3_ENDPOINT: http://minio:9000
       FILES_S3_BUCKET: files
       FILES_S3_ACCESS_KEY: minioadmin
@@ -22,16 +25,25 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   oma-server-b:
     build:
       context: .
       dockerfile: apps/main-node/Dockerfile
+      args:
+        SKIP_CONSOLE: "1"
     ports: ["8788:8787"]
     environment: *oma-env
     depends_on:
       postgres: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
+      oma-server-a: { condition: service_healthy }
 
   postgres:
     image: postgres:16-alpine

@@ -17,7 +17,7 @@
 
 - 不修改官方 sibling repository；所有变更只在本项目。
 - `subprocess` 仅面向可信 Agent，不是安全沙箱。
-- Docker/双副本实际执行、完整 crash/SSE 集成验证、tool confirmation delivery 和强 sandbox 尚未在本环境验证。
+- 完整 crash/SSE 集成验证、tool confirmation delivery 和强 sandbox 尚未在本环境验证。
 - 本机 `better-sqlite3` 缺少 Node 24 native binding，且没有可用 C++ 构建工具链；纯 Node 测试、typecheck 和 schema check 可运行。
 
 ## Verification record
@@ -26,4 +26,7 @@
 - `pnpm db:check`: PASS
 - Node focused tests: 11 tests PASS
 - `pnpm test`: attempted; official Cloudflare worker tests hit multiple 30-second environment timeouts.
-- Docker command: unavailable in the current environment.
+- `docker compose -f docker-compose.postgres-multi.yml up --build -d`: PASS。
+- `multi-replica.test.ts`: 3/3 PASS；A/B health、共享 PG queue 无重复领取、PG hub fanout 均已验证。
+- `pg-queue.test.ts` + `pg-fanout.test.ts`: 6/6 PASS。
+- 双副本 Compose 使用 API-only build、`SESSION_OUTPUTS_DIR=/app/data/session-outputs`，并让 B 等待 A 健康以避免迁移竞态。

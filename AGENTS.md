@@ -33,8 +33,9 @@
 - The queue is not yet a complete production recovery implementation: SQL
   promotion now records a durable turn ledger alongside canonical insert +
   queue delete, allowing a promoted-but-not-started turn to be replayed on
-  bootstrap. Cross-replica leasing/`SKIP LOCKED`, confirmation delivery, and
-  crash/SSE integration tests remain open.
+  bootstrap. The Postgres queue now has `FOR UPDATE SKIP LOCKED` and JSON
+  payload decoding; confirmation delivery and full crash/SSE integration tests
+  remain open.
 - Tenant-scoped Model Cards and Environment CRUD are now wired into the Node
   service. Model Card creation requires `PLATFORM_ROOT_SECRET`; the public API
   never returns plaintext credentials, and global environment-variable fallback
@@ -43,15 +44,19 @@
   immutable, files use the shared BlobStore key layout, Agent bindings are
   tenant/version validated, and selected files are provisioned under the
   sandbox's fixed `/mnt/skills/<skill>/<version>/` read-only view on startup.
-  Environment execution beyond `env-local-runtime` and multi-replica
-  validation remain to be implemented.
+  Environment execution beyond `env-local-runtime` remains open.
 - A process-wide WorkerPool now bounds total and per-tenant active turns using
   `WORKER_MAX_ACTIVE`, `TENANT_MAX_ACTIVE`, and optional `TURN_TIMEOUT_MS`;
   queue lifecycle metrics are emitted through the existing `/metrics` surface.
-- Postgres lease semantics, crash/SSE integration tests, and multi-replica
-  validation remain open.
-- A two-replica Postgres/MinIO Compose topology is provided for Task 8; it is
-  not yet locally executed in this environment.
+- Postgres lease semantics and two-replica fanout have been validated through
+  Docker Compose. Full crash/SSE recovery and real cross-replica Session turns
+  remain open.
+- `docker-compose.postgres-multi.yml` has been executed with two Node replicas,
+  Postgres, and MinIO. `multi-replica.test.ts` passes 3/3, and the PG queue/fanout
+  tests pass 6/6.
+- The multi-replica Compose file uses an API-only image (`SKIP_CONSOLE=1`) and
+  waits for replica A to become healthy before starting replica B, avoiding the
+  initial migration race.
 - Native SQLite-backed tests are currently blocked in this workspace because
   `better-sqlite3` has no installed Node 24 binary and the C++ build toolchain
   is unavailable; pure queue tests and TypeScript checks remain runnable.

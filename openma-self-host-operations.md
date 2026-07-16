@@ -22,6 +22,12 @@ pnpm db:check
 pnpm test:e2e
 ```
 
+This environment has verified Docker Desktop 4.82.0, Docker Engine 29.6.1,
+Compose v5.3.0, and the WSL2 backend. The multi-replica test environment does
+not publish Postgres to the host; tests run inside a Node container. The runtime
+image uses the `node` user, so Vitest's temporary directory requires a test
+image or an explicit root user when running tests.
+
 The official sibling repository is a read-only reference. Upstream changes are fetched and manually evaluated before selective integration.
 
 ## Tenant-scoped services
@@ -58,12 +64,23 @@ reverse proxy.
 
 ## Postgres multi-replica validation
 
-The intended validation topology is in
-`docker-compose.postgres-multi.yml`: two Node replicas share Postgres and
-MinIO-compatible BlobStore buckets. Run it only where Docker is available,
-then exercise the same Session through ports `8787` and `8788` and verify no
-duplicate `event_id`, cross-tenant reads, or SSE resume gaps. The Compose file
-is a validation harness, not a production secret configuration.
+The intended validation topology is in `docker-compose.postgres-multi.yml`: two
+Node replicas share Postgres and MinIO-compatible BlobStore buckets. The Compose
+file uses an API-only build, and replica B waits for replica A's `/health` before
+starting to avoid concurrent initial Drizzle migrations. Start and test it with:
+
+```text
+docker compose -f docker-compose.postgres-multi.yml up --build -d
+docker compose -f docker-compose.postgres-multi.yml exec -T --user root oma-server-a sh -lc "cd /app/apps/main-node && MULTI_REPLICA_A_URL=http://oma-server-a:8787 MULTI_REPLICA_B_URL=http://oma-server-b:8787 PG_TEST_URL=postgres://oma:oma@postgres:5432/oma /app/node_modules/.bin/vitest run --config vitest.config.ts test/multi-replica.test.ts"
+docker compose -f docker-compose.postgres-multi.yml down
+```
+
+`multi-replica.test.ts` passes 3/3: A/B health and shared backends, 12 queue
+messages claimed without duplicates, and cross-hub fanout. The existing
+`pg-queue.test.ts` and `pg-fanout.test.ts` pass 6/6 together. The Compose file is
+a validation harness, not a production secret configuration. Real cross-replica
+Session turns, crash recovery, SSE resume, and S3-compatible workspace backup
+remain unverified.
 
 ## Model Cards and Environments
 
