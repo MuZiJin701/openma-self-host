@@ -31,11 +31,12 @@ pnpm db:check
 pnpm --filter managed-agents-console build
 ```
 
-也可以在 WSL2 Ubuntu 内直接安装 Docker Engine 和 Compose plugin 运行项目。这个方向
-是可行的，并且比 Docker Desktop 更接近 Linux 部署环境。本项目约定继续使用
+也可以在 WSL2 Ubuntu 内运行 Docker Desktop 提供的 Linux Engine。推荐在 Docker Desktop
+的 `Settings > Resources > WSL Integration` 中启用 Ubuntu；不要直接进入其内部的
+`docker-desktop` 发行版运行项目。项目约定继续使用
 `/mnt/d/data/projects/practice/claude_agent_cloud/openma-self-host`，让 WSL 与 Windows
 共用同一工作目录；这会牺牲一部分跨文件系统 I/O 性能，但不再维护两份副本。当前本机
-WSL 已运行，但 Ubuntu 内的 Docker Engine 尚未安装；暂时仍可使用 Windows Docker Desktop。
+Ubuntu 的 WSL Integration 尚未启用，暂时仍可使用 Windows Docker Desktop 命令。
 
 配置数据库和 `PLATFORM_ROOT_SECRET` 后，使用仓库现有的开发或启动命令运行 Node 服务。
 Node 服务会从 `apps/console/dist` 提供 Console 静态文件。

@@ -73,11 +73,17 @@
   Windows subprocess shell 兼容性已通过验证；Workspace backup 的 Unix tar 测试
   仍需在 Linux/Docker 中验证。
 - 本机 WSL2 Ubuntu 已运行（版本 2），但 Ubuntu 内当前没有 Docker CLI/Engine；Windows
-  `docker` 命令仍连接 Docker Desktop 的 `desktop-linux` context。直接在 WSL 安装
-  Docker Engine 是可行且适合本项目 Linux/Docker 测试的方向，尚未执行安装或切换。
+  `docker` 命令仍连接 Docker Desktop 的 `desktop-linux` context。直接在 WSL 安装 Docker
+  Engine 仍是可行备选，但当前优先使用 Docker Desktop 的 Ubuntu WSL Integration。
+- 已验证 Docker Desktop 的 `docker-desktop` 内部发行版不支持直接执行 Docker CLI；后续优先
+  在 Docker Desktop 的 `Settings > Resources > WSL Integration` 中启用 Ubuntu，让 Ubuntu
+  使用 Docker Desktop Engine，不在内部发行版中保存项目，也不与独立 Docker Engine 混用。
 - WSL 构建、测试和 Docker 运行固定使用 `/mnt/d/data/projects/practice/claude_agent_cloud/openma-self-host`，
   与 Windows 工作目录共享同一份文件；接受 `/mnt/d` 跨文件系统 I/O 较慢的权衡，不在 WSL
   另建项目副本。
+- WSL Node 24.18.0、pnpm 11.0.8 已完成依赖安装；`typecheck`、`db:check` 和 5 个 Node
+  focused 测试文件（14 个测试）已通过。`crash-recovery.test.ts` 在 `/mnt/d` 上的真实
+  子进程回收仍会卡住，暂不记录为通过。
 
 ## 当前改造顺序
 

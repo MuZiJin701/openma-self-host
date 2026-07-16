@@ -7,32 +7,29 @@
 - Node 默认端口为 `8787`；工作区级部署可能将宿主机 `8008` 映射到容器端口。
 - 持久化状态位于 `data/`；日常开发或迁移过程中不得删除该目录。
 
-## WSL2 直接运行 Docker
+## WSL2 与 Docker Desktop
 
 本机已验证 WSL2 Ubuntu 正在运行，版本为 2；但 Ubuntu 内尚未安装 Docker CLI/Engine。
-Windows 侧的 `docker version` 当前连接的是 Docker Desktop 的 `desktop-linux` context。
+Windows 侧的 `docker version` 当前连接的是 Docker Desktop 的 `desktop-linux` context；
+Docker Desktop 的 `docker-desktop` 内部发行版拒绝直接执行 Docker CLI，这是预期行为。
 
-直接在 WSL2 内安装 Docker Engine 对本项目是可行且合理的：项目目标运行环境是 Linux，
-SQLite 原生依赖、`subprocess`、Docker Compose 和 PostgreSQL 行为会更接近实际部署环境，
-也可以完全不依赖 Docker Desktop。建议使用 WSL2 Ubuntu 的 systemd + Docker Engine +
-Compose plugin 组合，不要同时把同一个测试流程指向两个 Docker daemon。
+当前推荐使用 Docker Desktop 自带的 WSL2 Engine，但让 Ubuntu 作为工作发行版：在 Docker
+Desktop 中打开 `Settings > Resources > WSL Integration`，启用 `Ubuntu` 后 Apply。之后
+在 Ubuntu 中应能直接执行 `docker version` 和 `docker compose version`。项目仍然在 Ubuntu
+的 `/mnt/d/.../openma-self-host` 中构建，Docker Desktop 只提供 Engine，不承载项目副本。
 
-推荐准备步骤（尚未在本机执行）：
+不要在 `docker-desktop` 内部发行版中开发或保存项目，也不要同时在 Ubuntu 内安装独立的
+Docker Engine 并启用 Docker Desktop WSL Integration；两套 daemon 容易造成 context、socket
+和数据目录混淆。Docker Desktop WSL Integration 的说明见
+[Docker 官方文档](https://docs.docker.com/desktop/features/wsl/)。
+
+推荐准备步骤（WSL Integration 尚未在本机启用）：
 
 ```bash
-# WSL 内确认发行版和 systemd；需要时在 /etc/wsl.conf 启用：
-[boot]
-systemd=true
-
-# 重启 WSL 后，按 Docker 官方 Ubuntu 文档安装 docker-ce、docker-ce-cli、
-# containerd.io、docker-buildx-plugin 和 docker-compose-plugin。
-sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"
-
-# 重新进入 WSL 后确认使用本机 Engine，而不是 Docker Desktop context。
-docker context use default
+# Docker Desktop 设置完成后，在 Ubuntu 中确认 CLI 来自 WSL Integration。
 docker version
 docker compose version
+docker context ls
 ```
 
 本项目约定 WSL 内统一使用 Windows 共享工作副本，不再另建 Linux 文件系统副本：
@@ -54,8 +51,8 @@ pnpm db:check
 docker compose -f docker-compose.yml up --build
 ```
 
-如果暂时不安装 WSL Docker Engine，当前 Windows Docker Desktop 方案仍可用；两者都能
-完成 Compose 构建，但 WSL Engine 更适合作为本项目后续的默认 Linux 验证环境。
+如果后续需要完全不依赖 Docker Desktop，也可以改为在 Ubuntu 内安装 Docker Engine；切换前
+应先关闭 Docker Desktop 的 Ubuntu WSL Integration，并在文档中明确当前使用的 daemon。
 
 ## 运行时默认值
 
@@ -89,7 +86,10 @@ pnpm test:e2e
 ```
 
 Windows 侧已验证 Docker Desktop 4.82.0、Docker Engine 29.6.1、Compose v5.3.0
-和 WSL2 backend；WSL 内独立 Docker Engine 尚未验证。双副本测试环境不发布 Postgres
+和 WSL2 backend；Ubuntu 的 Docker Desktop WSL Integration 尚未启用。WSL Node
+24.18.0 + pnpm 11.0.8 已完成依赖安装，`typecheck`、`db:check` 通过，5 个 Node focused
+测试文件共 14 个测试通过；`crash-recovery.test.ts` 在 `/mnt/d` 上的真实子进程回收仍会
+卡住，需单独修复或改为 Docker 测试。双副本测试环境不发布 Postgres
 端口到宿主机，测试命令在 Node 容器内执行；运行镜像默认用户是 `node`，Vitest 临时目录
 需要使用专用测试镜像或测试时显式使用 root。
 
