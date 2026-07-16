@@ -332,7 +332,7 @@ proxy.forAnyRequest().thenCallback(async (req: CompletedRequest) => {
     upstream = await fetch(url, {
       method: req.method,
       headers,
-      body: bodyBuf.byteLength > 0 ? bodyBuf : undefined,
+      body: bodyBuf.byteLength > 0 ? (bodyBuf as unknown as BodyInit) : undefined,
       redirect: "manual",
     });
   } catch (err) {

@@ -101,7 +101,7 @@ export class CfDoEventLog implements EventLogRepo {
       processedAt,
       threadId,
     );
-    void this.r2.put(r2Key, fullData).catch((err) => {
+    void this.r2.put(r2Key, fullData).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[event-log] R2 spill PUT failed (${r2Key}): ${msg}`);
     });

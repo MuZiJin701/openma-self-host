@@ -11,37 +11,12 @@
 export { SqlMemoryStoreRepo } from "./sql-store-repo";
 export { SqlMemoryRepo } from "./sql-memory-repo";
 export { SqlMemoryVersionRepo } from "./sql-version-repo";
-export { CfR2BlobStore } from "./cf-r2";
-
 import { SqlMemoryStoreRepo } from "./sql-store-repo";
 import { SqlMemoryRepo } from "./sql-memory-repo";
 import { SqlMemoryVersionRepo } from "./sql-version-repo";
-import { CfR2BlobStore } from "./cf-r2";
-import { drizzle } from "drizzle-orm/d1";
 import type { OmaDb } from "@open-managed-agents/db-schema";
 import { MemoryStoreService } from "../service";
 import type { BlobStore, Logger } from "../ports";
-
-/**
- * CF deployment factory: D1 for index/audit + R2 for content.
- *
- * The R2 binding is REQUIRED — memory content lives there. There is no noop
- * blob store fallback; if MEMORY_BUCKET isn't bound, the entire memory
- * subsystem is non-functional and we fail loudly at construction.
- */
-export function createCfMemoryStoreService(
-  deps: { db: D1Database; r2: R2Bucket },
-  opts?: { logger?: Logger },
-): MemoryStoreService {
-  const drz = drizzle(deps.db);
-  return new MemoryStoreService({
-    storeRepo: new SqlMemoryStoreRepo(drz),
-    memoryRepo: new SqlMemoryRepo(drz),
-    versionRepo: new SqlMemoryVersionRepo(drz),
-    blobs: new CfR2BlobStore(deps.r2),
-    logger: opts?.logger,
-  });
-}
 
 /**
  * Node deployment factory. Caller passes any {@link OmaDb} (typically a

@@ -4,7 +4,7 @@
 //   - errors      : typed errors so HTTP handlers can map → status codes
 //   - ports       : abstract dependencies the service requires
 //   - service     : MemoryStoreService (pure business logic, port-only deps)
-//   - adapters    : Cloudflare-specific implementations + factory
+//   - adapters    : SQLite and local filesystem implementations
 //
 // Callers in apps/main and apps/agent normally only need:
 //   import { createCfMemoryStoreService } from "@open-managed-agents/memory-store";
@@ -28,13 +28,9 @@ export type { MemoryStoreServiceDeps } from "./service";
 // NOT re-exported — it lives behind the
 // `@open-managed-agents/memory-store/adapters/local-fs-blob` subpath so
 // the CF tsc pass doesn't have to typecheck Node-only imports.
-export {
-  createCfMemoryStoreService,
-  createSqliteMemoryStoreService,
-} from "./adapters";
+export { createSqliteMemoryStoreService } from "./adapters";
 export {
   SqlMemoryStoreRepo,
   SqlMemoryRepo,
   SqlMemoryVersionRepo,
-  CfR2BlobStore,
 } from "./adapters";

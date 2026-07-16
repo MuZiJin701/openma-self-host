@@ -34,11 +34,7 @@ WORKDIR /app
 # pnpm install cache.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpm-approve-builds.json ./
 COPY apps/main-node/package.json apps/main-node/
-COPY apps/main/package.json apps/main/
-COPY apps/agent/package.json apps/agent/
-COPY apps/integrations/package.json apps/integrations/
 COPY apps/console/package.json apps/console/
-COPY apps/docs/package.json apps/docs/
 COPY packages packages
 
 # Install workspace deps. --frozen-lockfile fails fast on lockfile drift.
@@ -49,21 +45,10 @@ RUN corepack enable \
 
 # Now bring in the source code (cache-busts only on src changes, not deps).
 COPY apps/main-node apps/main-node
-COPY apps/main apps/main
-COPY apps/agent apps/agent
 COPY apps/console apps/console
 COPY tsconfig.json ./
 
-# Build console SPA. Vite produces /app/apps/console/dist; the runtime
-# stage sets CONSOLE_DIR to that path and main-node's serveStatic
-# middleware picks it up. Skip with --build-arg SKIP_CONSOLE=1 if you
-# want a smaller API-only image (e.g. for SDK-only deploys).
-ARG SKIP_CONSOLE=0
-RUN if [ "$SKIP_CONSOLE" != "1" ]; then \
-      pnpm --filter managed-agents-console build; \
-    else \
-      mkdir -p apps/console/dist; \
-    fi
+RUN pnpm --filter managed-agents-console build
 
 # ─── Stage 2: runtime ──────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
@@ -84,8 +69,8 @@ RUN apt-get update \
   && corepack enable
 WORKDIR /app
 
-# Copy the whole monorepo from deps (includes node_modules, source, schemas
-# and the freshly-built apps/console/dist).
+# Copy the minimal Node workspace from deps (includes node_modules, source
+# and schemas).
 # An optimisation pass would `pnpm deploy --prod` to a slim subtree; for the
 # PoC this is the simplest correct copy.
 COPY --from=deps /app /app
@@ -99,12 +84,7 @@ ENV PORT=8787
 ENV HOST=0.0.0.0
 ENV DATABASE_PATH=/app/data/oma.db
 ENV SANDBOX_WORKDIR=/app/data/sandboxes
-# Console SPA is at /app/apps/console/dist (built in the deps stage).
-# main-node's serveStatic middleware mounts it at "/*" with index.html
-# fallback. Unset CONSOLE_DIR (or build with --build-arg SKIP_CONSOLE=1)
-# to ship an API-only image.
 ENV CONSOLE_DIR=/app/apps/console/dist
-
 EXPOSE 8787
 USER node
 WORKDIR /app/apps/main-node

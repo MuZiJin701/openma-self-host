@@ -36,10 +36,6 @@ export default defineConfig({
       "/auth": proxyOpts,
       "/auth-info": proxyOpts,
       "/health": proxyOpts,
-      "/linear": proxyOpts,
-      "/linear-setup": proxyOpts,
-      "/github": proxyOpts,
-      "/github-setup": proxyOpts,
     },
   },
 });

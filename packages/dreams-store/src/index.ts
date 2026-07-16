@@ -13,4 +13,4 @@ export * from "./errors";
 export * from "./ports";
 export { DreamService } from "./service";
 export type { DreamServiceDeps } from "./service";
-export { SqlDreamRepo, createCfDreamService, createSqliteDreamService } from "./adapters";
+export { SqlDreamRepo, createSqliteDreamService } from "./adapters";

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { authClient } from "../lib/auth-client";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
-import { Turnstile } from "../components/Turnstile";
 import { Logo } from "../components/Logo";
 import { setActiveTenantId } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
@@ -43,7 +42,6 @@ export function Login() {
   // re-mounts so a navigation between modes doesn't refetch.
   const { data: authInfo } = useApiQuery<{
     providers?: string[];
-    turnstile_site_key?: string | null;
   }>("/auth-info");
   const googleEnabled = !!authInfo?.providers?.includes("google");
   // Whether the backend gates sign-up behind an email-OTP verification.
@@ -56,11 +54,6 @@ export function Login() {
   // Turnstile site key (public) is read from /auth-info; null when the
   // backend hasn't been configured yet, in which case the auth middleware
   // also soft-passes — both sides agree to skip the check.
-  const turnstileSiteKey = authInfo?.turnstile_site_key ?? null;
-  const [turnstileToken, setTurnstileToken] = useState("");
-  // Bumping this counter re-mounts the Turnstile widget after each form
-  // submission so the next attempt gets a fresh single-use token.
-  const [turnstileNonce, setTurnstileNonce] = useState(0);
   const otpRef = useRef<HTMLInputElement>(null);
 
   // Honor `?next=` so callers (e.g. /cli/login) can bounce through here and
@@ -106,77 +99,17 @@ export function Login() {
 
   const clearOtp = () => setOtp("");
 
-  // Modes that trigger an outbound email — those need a Turnstile token.
-  // Verify modes (verify-signup, verify-login) submit OTP and don't send
-  // mail, so they don't need the widget.
-  const isEmailSendMode =
-    mode === "signup" ||
-    mode === "login" ||
-    mode === "otp-login" ||
-    mode === "forgot";
-
-  // Submit can fire before Turnstile has minted a token (user clicks fast,
-  // cold script load, etc.). Rather than disabling the button — which
-  // makes the form feel "not ready" — we let the click through and await
-  // the token via a queue. The widget's onToken callback drains all
-  // pending resolvers, then submit proceeds with the real request.
-  const tokenRef = useRef("");
-  const pendingTokenResolvers = useRef<Array<(t: string) => void>>([]);
-  const handleTurnstileToken = (t: string) => {
-    tokenRef.current = t;
-    setTurnstileToken(t);
-    const queued = pendingTokenResolvers.current;
-    pendingTokenResolvers.current = [];
-    for (const resolve of queued) resolve(t);
-  };
-  const waitForTurnstileToken = (): Promise<string> => {
-    if (!turnstileSiteKey) return Promise.resolve(""); // soft-pass when unconfigured
-    if (tokenRef.current) return Promise.resolve(tokenRef.current);
-    // 30s ceiling so a stuck widget doesn't hang the form forever.
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingTokenResolvers.current = pendingTokenResolvers.current.filter((r) => r !== wrapped);
-        reject(new Error("Bot challenge timed out — refresh the page and try again"));
-      }, 30_000);
-      const wrapped = (t: string) => {
-        clearTimeout(timer);
-        resolve(t);
-      };
-      pendingTokenResolvers.current.push(wrapped);
-    });
-  };
-  const resetTurnstile = () => {
-    tokenRef.current = "";
-    setTurnstileToken("");
-    setTurnstileNonce((n) => n + 1);
-  };
-
-  /** Build fetchOptions with the Turnstile token (await if it hasn't
-   *  arrived yet). Returns undefined when Turnstile isn't configured at
-   *  all — middleware soft-passes in that case. */
-  const buildTurnstileOpts = async () => {
-    if (!turnstileSiteKey) return undefined;
-    const token = await waitForTurnstileToken();
-    return { headers: { "cf-turnstile-token": token } };
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      // Block on Turnstile up front for email-send modes so any subsequent
-      // authClient call already has the header. The user just sees the
-      // submit button spin — they don't see a separate "verifying" state.
-      const turnstileFetchOpts = isEmailSendMode ? await buildTurnstileOpts() : undefined;
-
       if (mode === "signup") {
         const { error } = await authClient.signUp.email({
           email,
           password,
           name: name || email.split("@")[0],
-          fetchOptions: turnstileFetchOpts,
         });
         if (error) throw new Error(error.message);
         clearOtp();
@@ -197,7 +130,6 @@ export function Login() {
         const { error } = await authClient.signIn.email({
           email,
           password,
-          fetchOptions: turnstileFetchOpts,
         });
         if (error) {
           // better-auth signals "needs to verify email" via code=EMAIL_NOT_VERIFIED
@@ -209,11 +141,9 @@ export function Login() {
             error.message?.toLowerCase().includes("verif");
           if (needsVerify) {
             // Need a fresh token — the previous one was consumed by signIn.email.
-            const reSendOpts = await buildTurnstileOpts();
             await authClient.emailOtp.sendVerificationOtp({
               email,
               type: "email-verification",
-              fetchOptions: reSendOpts,
             });
             clearOtp();
             setMode("verify-signup");
@@ -227,7 +157,6 @@ export function Login() {
         const { error } = await authClient.emailOtp.sendVerificationOtp({
           email,
           type: "sign-in",
-          fetchOptions: turnstileFetchOpts,
         });
         if (error) throw new Error(error.message);
         clearOtp();
@@ -253,7 +182,6 @@ export function Login() {
         const { error } = await authClient.emailOtp.sendVerificationOtp({
           email,
           type: "forget-password",
-          fetchOptions: turnstileFetchOpts,
         });
         if (error) throw new Error(error.message);
         clearOtp();
@@ -283,9 +211,6 @@ export function Login() {
         "Authentication failed";
       setError(msg);
     } finally {
-      // Always reset the Turnstile token after a submit attempt — tokens
-      // are single-use, so we'd 401 on the next try otherwise.
-      if (isEmailSendMode) resetTurnstile();
       setLoading(false);
     }
   };
@@ -299,18 +224,15 @@ export function Login() {
         "verify-login": "sign-in",
         "reset-otp": "forget-password",
       };
-      const opts = await buildTurnstileOpts();
       const { error } = await authClient.emailOtp.sendVerificationOtp({
         email,
         type: typeMap[mode] || "email-verification",
-        fetchOptions: opts,
       });
       if (error) throw new Error(error.message);
       clearOtp();
     } catch (err: any) {
       setError(err.message || "Failed to resend code");
     } finally {
-      resetTurnstile();
       setLoading(false);
     }
   };
@@ -528,27 +450,6 @@ export function Login() {
                 minLength={8}
                 name="new-password"
                 autoComplete="new-password"
-              />
-            </div>
-          )}
-
-          {/* Turnstile bot challenge — only on email-send modes. When the
-              backend hasn't been configured (turnstileSiteKey === null),
-              widget renders nothing and the submit button doesn't gate on
-              the token (matches the soft-pass middleware behavior).
-
-              Widget is rendered hidden so it loads + runs the challenge
-              in the background while the user fills in the form. The
-              submit button stays clickable; if the token isn't ready
-              yet, handleSubmit awaits it and the user just sees the
-              normal Loading state. */}
-          {isEmailSendMode && turnstileSiteKey && (
-            <div className="hidden" aria-hidden="true">
-              <Turnstile
-                key={turnstileNonce}
-                siteKey={turnstileSiteKey}
-                onToken={handleTurnstileToken}
-                onExpire={resetTurnstile}
               />
             </div>
           )}

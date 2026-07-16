@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { PopoverContent } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { MCP_REGISTRY, type McpRegistryEntry } from "../data/mcp-registry";
+import { MCP_REGISTRY } from "../data/mcp-registry";
 
 // =================================================================
 // Types
@@ -383,7 +383,7 @@ function AddCredentialModal({
   // token is filled (RFC 6749 §6: refresh_token requires access_token).
   const [customForm, setCustomForm] = useState({
     name: "",
-    type: "oauth" as "oauth" | "bearer",
+    type: "bearer" as const,
     url: "",
     pickedName: "",
     pickedIcon: "",
@@ -394,12 +394,9 @@ function AddCredentialModal({
       | "client_secret_basic"
       | "client_secret_post"
       | "none",
-    clientId: "",
-    clientSecret: "",
   });
   const [tokenSectionOpen, setTokenSectionOpen] = useState(false);
   const [refreshSectionOpen, setRefreshSectionOpen] = useState(false);
-  const [clientCredsSectionOpen, setClientCredsSectionOpen] = useState(false);
 
   // Add-CLI form (cap_cli credentials). Visible under the "CLI" tab.
   const [cliForm, setCliForm] = useState({
@@ -422,82 +419,6 @@ function AddCredentialModal({
     status: "polling" | "ready" | "expired" | "denied" | "error";
     error?: string;
   } | null>(null);
-
-  // Listen for OAuth popup completion. Two transports because COOP
-  // severs window.opener for providers like Sentry (which set
-  // Cross-Origin-Opener-Policy: same-origin on their authorize page) —
-  // postMessage from the popup back to us doesn't work in that case.
-  // BroadcastChannel is same-origin and survives COOP, so use it as a
-  // parallel channel; the popup posts to both. Either firing is enough.
-  const handleOAuthMessage = useCallback(
-    (event: MessageEvent | { data: unknown }) => {
-      const data = (
-        event as {
-          data?: {
-            type?: string;
-            service?: string;
-            probe_ok?: boolean;
-            probe_message?: string | null;
-          };
-        }
-      ).data;
-      if (data?.type === "oauth_complete") {
-        setConnecting(null);
-        onCreated();
-        // Surface the MCP probe result so the user knows whether the just-
-        // stored credential will actually work. Same toasts as the legacy
-        // VaultsList modal.
-        const svc = data.service ?? "MCP server";
-        if (data.probe_ok === true) {
-          toast.success(`Connected to ${svc} — token verified.`);
-        } else if (data.probe_ok === false) {
-          toast.warning(
-            data.probe_message
-              ? `Connected to ${svc}, but: ${data.probe_message}`
-              : `Connected to ${svc}, but the server rejected our token.`,
-          );
-        }
-      }
-    },
-    [onCreated],
-  );
-
-  useEffect(() => {
-    window.addEventListener("message", handleOAuthMessage);
-    let bc: BroadcastChannel | null = null;
-    try {
-      bc = new BroadcastChannel("openma-oauth");
-      bc.addEventListener("message", handleOAuthMessage);
-    } catch {
-      // Old browser without BroadcastChannel — fall back to postMessage only.
-    }
-    return () => {
-      window.removeEventListener("message", handleOAuthMessage);
-      if (bc) {
-        bc.removeEventListener("message", handleOAuthMessage);
-        bc.close();
-      }
-    };
-  }, [handleOAuthMessage]);
-
-  const connectMcp = (
-    entry: McpRegistryEntry | { name: string; url: string },
-    opts?: { clientId?: string; clientSecret?: string },
-  ) => {
-    setConnecting(entry.name);
-    const params = new URLSearchParams({
-      mcp_server_url: entry.url,
-      vault_id: vault.id,
-      redirect_uri: window.location.href,
-    });
-    if (opts?.clientId) params.set("client_id", opts.clientId);
-    if (opts?.clientSecret) params.set("client_secret", opts.clientSecret);
-    window.open(
-      `/v1/oauth/authorize?${params.toString()}`,
-      "oauth",
-      "width=600,height=700,popup=yes",
-    );
-  };
 
   const createBearerCred = async () => {
     setConnecting("custom");
@@ -540,21 +461,13 @@ function AddCredentialModal({
     //   - Bearer type or Access token filled → POST a credential
     //     immediately (mcp_oauth if refresh_token present, else
     //     static_bearer). Button reads "Add credential".
-    //   - Otherwise → start /v1/oauth/authorize popup. Button reads
-    //     "Connect". Picking a registry row only fills the MCP Server
-    //     field, never auto-connects.
+    //   - Without a token there is no browser OAuth flow in self-host; ask
+    //     the user to provide a token explicitly.
     if (!customForm.url) return;
-    if (customForm.type === "bearer" || customForm.token) {
+    if (customForm.token) {
       void createBearerCred();
     } else {
-      connectMcp(
-        {
-          name:
-            customForm.name || customForm.pickedName || customForm.url,
-          url: customForm.url,
-        },
-        { clientId: customForm.clientId, clientSecret: customForm.clientSecret },
-      );
+      toast.error("请填写 Access token；当前自部署版本不提供 OAuth 授权回调。 ");
     }
   };
 
@@ -704,12 +617,10 @@ function AddCredentialModal({
               disabled={
                 !customForm.url ||
                 !!connecting ||
-                (customForm.type === "bearer" && !customForm.token)
+                !customForm.token
               }
             >
-              {customForm.token || customForm.type === "bearer"
-                ? "Add credential"
-                : "Connect"}
+              Add credential
             </Button>
           </>
         )
@@ -747,22 +658,6 @@ function AddCredentialModal({
               placeholder="Example MCP"
               className={inputCls}
             />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-fg block mb-1">Type</label>
-            <div className="inline-flex rounded-md border border-border p-0.5">
-              {(["oauth", "bearer"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setCustomForm({ ...customForm, type: t })}
-                  className={`inline-flex items-center justify-center px-3 py-1 min-h-11 sm:min-h-0 text-sm rounded ${customForm.type === t ? "bg-bg-surface text-fg font-medium" : "text-fg-muted"}`}
-                >
-                  {t === "oauth" ? "OAuth" : "Bearer token"}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div>
@@ -950,52 +845,6 @@ function AddCredentialModal({
                 <div className="text-xs text-fg-subtle">
                   RFC 8414 token_endpoint_auth_methods_supported. Used when the
                   server refreshes on 401.
-                </div>
-              </div>
-            </Disclosure>
-          )}
-          {/* OAuth client credentials (Optional) — only shown for the
-              OAuth flow. Lets the user override the server's preset
-              client_id/secret on a per-credential basis (GitHub, Feishu,
-              any provider that doesn't support DCR). */}
-          {customForm.type === "oauth" && !customForm.token && (
-            <Disclosure
-              title="OAuth client credentials"
-              meta={
-                <span className="px-1.5 py-0.5 rounded bg-bg-surface">
-                  Optional
-                </span>
-              }
-              open={clientCredsSectionOpen}
-              onOpenChange={setClientCredsSectionOpen}
-            >
-              <div className="space-y-2">
-                <input
-                  value={customForm.clientId}
-                  onChange={(e) =>
-                    setCustomForm({ ...customForm, clientId: e.target.value })
-                  }
-                  placeholder="Client ID"
-                  aria-label="OAuth client ID"
-                  className={inputCls}
-                />
-                <input
-                  value={customForm.clientSecret}
-                  onChange={(e) =>
-                    setCustomForm({
-                      ...customForm,
-                      clientSecret: e.target.value,
-                    })
-                  }
-                  type="password"
-                  placeholder="Client secret"
-                  aria-label="OAuth client secret"
-                  className={inputCls}
-                />
-                <div className="text-xs text-fg-subtle">
-                  For OAuth providers that don't support Dynamic Client
-                  Registration (GitHub, Feishu) — supply a client_id/secret from
-                  a pre-registered app.
                 </div>
               </div>
             </Disclosure>

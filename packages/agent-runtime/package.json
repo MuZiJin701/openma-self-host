@@ -1,0 +1,30 @@
+{
+  "name": "@open-managed-agents/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/harness/default-loop.ts",
+  "exports": {
+    "./harness/default-loop": "./src/harness/default-loop.ts",
+    "./harness/interface": "./src/harness/interface.ts",
+    "./harness/tools": "./src/harness/tools.ts",
+    "./harness/provider": "./src/harness/provider.ts",
+    "./harness/platform-guidance": "./src/harness/platform-guidance.ts",
+    "./runtime/history": "./src/runtime/history.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.69",
+    "@ai-sdk/mcp": "1.0.37",
+    "@open-managed-agents/browser-harness": "workspace:*",
+    "@open-managed-agents/event-log": "workspace:*",
+    "@open-managed-agents/markdown": "workspace:*",
+    "@open-managed-agents/sandbox": "workspace:*",
+    "@open-managed-agents/shared": "workspace:*",
+    "ai": "^6.0.158",
+    "nanoid": "^5.1.0",
+    "zod": "^4.3.6"
+  }
+}

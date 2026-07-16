@@ -19,17 +19,13 @@ import { UserProfile } from "./UserProfile";
 import {
   AgentIcon,
   ApiKeysIcon,
-  RuntimesIcon,
   DashboardIcon,
   EnvIcon,
   FilesIcon,
-  GitHubIcon,
-  LinearIcon,
   MemoryIcon,
   ModelCardsIcon,
   SessionsIcon,
   SkillsIcon,
-  SlackIcon,
   VaultIcon,
 } from "./icons";
 import { consolePlugins } from "../plugins/registry";
@@ -75,15 +71,6 @@ const navGroups: NavGroup[] = [
       { to: "/memory", label: "Memory Stores", icon: MemoryIcon },
       { to: "/model-cards", label: "Model Cards", icon: ModelCardsIcon },
       { to: "/api-keys", label: "API Keys", icon: ApiKeysIcon },
-      { to: "/runtimes", label: "Local Runtimes", icon: RuntimesIcon },
-    ],
-  },
-  {
-    label: "Integrations",
-    items: [
-      { to: "/integrations/linear", label: "Linear", icon: LinearIcon },
-      { to: "/integrations/github", label: "GitHub", icon: GitHubIcon },
-      { to: "/integrations/slack", label: "Slack", icon: SlackIcon },
     ],
   },
 ];
@@ -94,7 +81,7 @@ const navGroups: NavGroup[] = [
  *  rule, this is a hardcoded allowlist of length 1 — when a second
  *  labeled group materializes, lift to a per-group `showLabel: true`
  *  flag on NavGroup. */
-const LABELED_GROUPS = new Set(["Integrations"]);
+const LABELED_GROUPS = new Set<string>();
 
 /**
  * Console sidebar — cloned from minimaxhub_benchmark/AppShell so the
@@ -118,7 +105,7 @@ const LABELED_GROUPS = new Set(["Integrations"]);
  *                       collapses identically (icon at x=12, text
  *                       hides via group-data-[collapsible=icon]:hidden)
  *   3. SidebarContent — nav items, flat for the first 4 groups, then a
- *                       labeled `Integrations` group at the bottom
+ *                       grouped navigation at the bottom
  *   4. SidebarFooter  — UserProfile (alone — tenant lives at the top now)
  */
 export function AppSidebar() {
@@ -168,7 +155,7 @@ export function AppSidebar() {
   // Split groups into the flat prefix (rendered as one SidebarMenu,
   // no group containers/labels) and the labeled tail (each rendered as
   // its own SidebarGroup with a SidebarGroupLabel). Today there's only
-  // one labeled group ("Integrations"); the structure still handles N.
+  // grouped navigation remains data-driven for future resource pages.
   const flatGroups = groups.filter((g) => !LABELED_GROUPS.has(g.label));
   const labeledGroups = groups.filter((g) => LABELED_GROUPS.has(g.label));
 
@@ -197,7 +184,7 @@ export function AppSidebar() {
       <SidebarContent className="bg-sidebar [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
         {/* Both sections live in a SidebarGroup so they share the same
             `p-2` indentation — without it the flat group's icons sit
-            8px further left than the Integrations icons below, which
+            8px further left than the secondary icons below, which
             reads as misaligned. The top group collapses the 4 source
             navGroups (Overview / Managed Agents / Infrastructure /
             Configuration) under a single 'Managed Agents' label per

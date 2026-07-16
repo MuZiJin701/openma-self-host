@@ -1,4 +1,4 @@
-// Node-PG schema — union of cf-auth + cf-integrations + cf-router with
+// Node-PG schema — union of cf-auth + cf-router with
 // PG-typed columns (BIGINT timestamps, TIMESTAMPTZ for better-auth,
 // BOOLEAN for boolean flags, etc.).
 //
@@ -21,6 +21,3 @@ export * from "./cf-auth-evals";
 export * from "./cf-auth-usage";
 export * from "./cf-auth-kv";
 export * from "./cf-router-sharding";
-export * from "./cf-integrations-linear";
-export * from "./cf-integrations-github";
-export * from "./cf-integrations-slack";

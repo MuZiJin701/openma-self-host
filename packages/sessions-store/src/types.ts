@@ -10,8 +10,8 @@
 //     the `config` column. The full SessionResource is round-tripped through
 //     `config` for symmetry across resource types; a denormalized `type` column
 //     supports the per-type quota count without touching JSON.
-//   - The actual secret values for `github_repository.authorization_token` and
-//     `env.value` (legacy: `env_secret.value`) are NOT stored here — they
+//   - The actual secret values for `env.value` (legacy: `env_secret.value`)
+//     are NOT stored here — they
 //     continue to live in CONFIG_KV under
 //     `t:{tenant}:secret:{session}:{resource}` keys, owned by the route layer
 //     (sessions.ts:361/374, internal.ts:315). This store is intentionally
@@ -37,7 +37,7 @@ export interface SessionRow {
   agent_snapshot: AgentConfig | null;
   /** Frozen environment definition at session-create time. */
   environment_snapshot: EnvironmentConfig | null;
-  /** Caller-supplied free-form metadata (Linear webhook context, eval-run id, etc.). */
+  /** Caller-supplied free-form metadata for the session. */
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string | null;

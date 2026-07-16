@@ -8,7 +8,6 @@ export type {
   BlobStore,
 } from "./ports";
 
-export { CfR2BlobStore, blobStoreFromR2 } from "./adapters/cf-r2";
 export { InMemoryBlobStore } from "./adapters/in-memory";
 export { S3BlobStore } from "./adapters/s3";
 // LocalFsBlobStore is exported via the explicit `./adapters/local-fs` subpath

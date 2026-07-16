@@ -1,16 +1,6 @@
 // Sessions routes — runtime-agnostic mount over the SessionRouter.
-//
-// CF wires SessionRouter = CfSessionRouter (DO RPC); Node wires
-// SessionRouter = NodeSessionRouter (in-process registry + SQL log +
-// hub). Routes here never know about SessionDO bindings, R2, or
-// node:fs — those concerns live in the runtime adapters and the
-// optional CF-only callbacks in `deps`.
-//
-// The complex session-create flow (USAGE_METER gate, GitHub fast-path
-// token mint, refreshProviderCredentialsForSession, R2 file copy on
-// resource attach, R2 outputs cascade-delete) is plumbed through
-// optional `deps.lifecycle` hooks so the package can stay environment-
-// neutral while preserving CF wire shape.
+// Node self-host session routes. Storage and runtime-specific operations
+// are supplied through small lifecycle hooks so the API remains testable.
 
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
@@ -84,20 +74,12 @@ export interface SessionLifecycleHooks {
     agentId: string;
     isLocalRuntime: boolean;
   }) => Promise<{ status: number; body: unknown } | null>;
-  /** Refresh provider-tagged credentials for the given vault set + return
-   *  any session.warning events to inject. CF: refreshProviderCredentialsForSession.
-   *  Node: returns []. */
+  /** Refresh credentials for the given vault set and return warning events. */
   refreshSessionCredentials?: (input: {
     tenantId: string;
     agentId: string;
     vaultIds: string[];
   }) => Promise<SessionEvent[]>;
-  /** GitHub binding fast-path: per-repo, mint a fresh installation token
-   *  + return the matching vault id to attach. */
-  githubBindingFastPath?: (input: {
-    tenantId: string;
-    repoUrl: string;
-  }) => Promise<{ token: string; vaultId: string } | null>;
   /** Per-session daily-cap + per-minute rate-limit on session create. */
   preCreateRateLimit?: (input: {
     tenantId: string;
@@ -302,16 +284,12 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       title?: string;
       vault_ids?: string[];
       resources?: Array<{
-        type: "file" | "memory_store" | "github_repository" | "github_repo" | "env" | "env_secret";
+        type: "file" | "memory_store" | "env" | "env_secret";
         file_id?: string;
         memory_store_id?: string;
         mount_path?: string;
         access?: "read_write" | "read_only";
         instructions?: string;
-        url?: string;
-        repo_url?: string;
-        authorization_token?: string;
-        checkout?: { type?: string; name?: string; sha?: string };
         name?: string;
         value?: string;
       }>;
@@ -374,28 +352,6 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     }
     const vaultIds = body.vault_ids ?? [];
 
-    // GitHub fast-path: pre-mint installation tokens for unbound repo refs.
-    const fastPathTokens = new Map<string, string>();
-    if (deps.lifecycle?.githubBindingFastPath && body.resources?.length) {
-      for (const res of body.resources) {
-        if (
-          (res.type === "github_repository" || res.type === "github_repo") &&
-          (res.url || res.repo_url) &&
-          !res.authorization_token
-        ) {
-          const repoUrl = res.url || res.repo_url!;
-          const fast = await deps.lifecycle.githubBindingFastPath({
-            tenantId: t,
-            repoUrl,
-          });
-          if (fast) {
-            fastPathTokens.set(repoUrl, fast.token);
-            if (!vaultIds.includes(fast.vaultId)) vaultIds.push(fast.vaultId);
-          }
-        }
-      }
-    }
-
     const refreshEvents = deps.lifecycle?.refreshSessionCredentials
       ? await deps.lifecycle.refreshSessionCredentials({
           tenantId: t,
@@ -410,7 +366,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
 
     // Build initial resource inputs (non-file).
     const nonFileInputs: Array<{
-      type: "memory_store" | "github_repository" | "env";
+      type: "memory_store" | "env";
       [k: string]: unknown;
     }> = [];
     for (const res of body.resources ?? []) {
@@ -424,18 +380,6 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
             typeof res.instructions === "string"
               ? res.instructions.slice(0, 4096)
               : undefined,
-        });
-      } else if (
-        (res.type === "github_repository" || res.type === "github_repo") &&
-        (res.url || res.repo_url)
-      ) {
-        const repoUrl = res.url || res.repo_url!;
-        nonFileInputs.push({
-          type: "github_repository",
-          url: repoUrl,
-          repo_url: repoUrl,
-          mount_path: res.mount_path || "/workspace",
-          checkout: res.checkout,
         });
       } else if ((res.type === "env" || res.type === "env_secret") && res.name && res.value) {
         nonFileInputs.push({ type: "env", name: res.name });

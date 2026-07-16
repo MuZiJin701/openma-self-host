@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams, Link } from "react-router";
+import { useParams } from "react-router";
 import { useApi } from "../lib/api";
 import { toast } from "sonner";
 import { Markdown } from "../components/Markdown";
@@ -110,18 +110,6 @@ export function SessionDetail() {
     | null
   >(null);
   const [showFiles, setShowFiles] = useState(false);
-  const [linear, setLinear] = useState<{
-    issueId?: string;
-    issueIdentifier?: string;
-    workspaceId?: string;
-  } | null>(null);
-  const [slack, setSlack] = useState<{
-    channelId?: string;
-    threadTs?: string;
-    workspaceId?: string;
-    eventKind?: string;
-    publicationId?: string;
-  } | null>(null);
   const [status, setStatus] = useState("idle");
   /** Lazy-fetched Trajectory v1 envelope. Drives the outcome + reward
    *  chips in the header strip and the Trajectory viewer modal. We don't
@@ -503,18 +491,6 @@ export function SessionDetail() {
             ),
           ).then((vaults) => setSessionMeta((prev) => ({ ...prev, vaults })));
         }
-        const linearMeta = s.metadata?.linear as
-          | { issueId?: string; issueIdentifier?: string; workspaceId?: string }
-          | undefined;
-        if (linearMeta && (linearMeta.issueId || linearMeta.issueIdentifier)) {
-          setLinear(linearMeta);
-        }
-        const slackMeta = s.metadata?.slack as
-          | { channelId?: string; threadTs?: string; workspaceId?: string; eventKind?: string; publicationId?: string }
-          | undefined;
-        if (slackMeta && (slackMeta.channelId || slackMeta.threadTs)) {
-          setSlack(slackMeta);
-        }
       })
       .catch(() => {});
 
@@ -873,80 +849,6 @@ export function SessionDetail() {
           Trajectory
         </button>
       </div>
-
-      {/* Linear context (when triggered by a Linear webhook) */}
-      {linear && (
-        <div className="pl-3 pr-4 py-2 bg-info-subtle text-xs flex items-center gap-2 text-info">
-          <span>🔗</span>
-          <span className="font-medium">Linear</span>
-          <span className="opacity-60">·</span>
-          <span>
-            issue{" "}
-            <span className="font-mono">{linear.issueIdentifier ?? linear.issueId}</span>
-          </span>
-          {linear.workspaceId && (
-            <a
-              href={`https://linear.app`}
-              target="_blank"
-              rel="noreferrer"
-              className="ml-auto hover:underline"
-            >
-              Open in Linear ↗
-            </a>
-          )}
-        </div>
-      )}
-
-      {/* Slack context (when triggered by a Slack event) */}
-      {slack && (
-        <div className="pl-3 pr-4 py-2 bg-accent-violet-subtle text-xs flex items-center gap-2 text-accent-violet flex-wrap">
-          <span>💬</span>
-          <span className="font-medium">Slack</span>
-          <span className="opacity-60">·</span>
-          <span>
-            {slack.channelId ? (
-              slack.workspaceId ? (
-                <a
-                  href={`slack://channel?team=${slack.workspaceId}&id=${slack.channelId}`}
-                  className="font-mono underline hover:no-underline"
-                  title="Open in Slack desktop"
-                >
-                  channel {slack.channelId} ↗
-                </a>
-              ) : (
-                <>
-                  channel <span className="font-mono">{slack.channelId}</span>
-                </>
-              )
-            ) : (
-              "—"
-            )}
-            {slack.threadTs && (
-              <>
-                {" "}thread{" "}
-                <span className="font-mono">{slack.threadTs}</span>
-              </>
-            )}
-          </span>
-          {slack.eventKind && (
-            <span className="opacity-60 font-mono uppercase tracking-wider text-[10px]">
-              {slack.eventKind}
-            </span>
-          )}
-          {slack.publicationId && (
-            <>
-              <span className="opacity-60">·</span>
-              <Link
-                to={`/integrations/slack/publish?pub=${slack.publicationId}`}
-                className="underline hover:no-underline"
-                title="Open the Slack publication this session is bound to"
-              >
-                publication →
-              </Link>
-            </>
-          )}
-        </div>
-      )}
 
       {/* Filter by selected thread. Untagged events (legacy + spans
           that haven't been thread-stamped yet) are treated as primary —

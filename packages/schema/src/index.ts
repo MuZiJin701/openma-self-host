@@ -19,7 +19,6 @@ export interface ApplySchemaOptions {
    *  its own connection). */
   includeBetterAuth?: boolean;
 }
-
 /**
  * Tolerate the PG `pg_type_typname_nsp_index` collision that can occur
  * when two replicas race the bootstrap CREATE TABLE on a fresh database.
@@ -190,15 +189,4 @@ export async function applyTenantSchema(sql: SqlClient): Promise<void> {
  * S3 memory poller per-store lease — only one replica polls a given store
  * at a time. Lives in this package because the lease table is the same
  * idempotent CREATE pattern as the rest of the schema.
- */
-
-/**
- * Integrations subsystem tables — Linear/GitHub/Slack publications, installs,
- * Apps, dispatch rules, webhook event logs, setup links, per-issue/per-thread
- * session bindings. Mirrors apps/main/migrations/0001_schema.sql + 0002 +
- * 0004 + 0007 + 0008 + 0009 + 0012 (post-tenant-id NOT NULL shape).
- *
- * Idempotent — every CREATE uses IF NOT EXISTS. Self-host calls this on
- * boot from main-node so the same SqlClient holds the integrations data;
- * CF stays on D1 migrations and never invokes this.
  */

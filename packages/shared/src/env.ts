@@ -15,12 +15,6 @@ export interface Env {
   AUTH_DB_01?: D1Database;
   AUTH_DB_02?: D1Database;
   AUTH_DB_03?: D1Database;
-  /** Integration subsystem D1 (linear_* / github_* / slack_* tables).
-   *  Separate database from MAIN_DB to isolate webhook write traffic and
-   *  let the integration subsystem evolve schema independently.
-   *  Optional on workers that don't touch integration tables (sandbox /
-   *  agent workers). Required on apps/main and apps/integrations. */
-  INTEGRATIONS_DB?: D1Database;
   SEND_EMAIL?: SendEmail;
   // SESSION_DO and SANDBOX are only in sandbox workers
   SESSION_DO?: DurableObjectNamespace;
@@ -86,23 +80,6 @@ export interface Env {
   AUTH_COOKIE_NAME?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
-  // Pre-registered OAuth client_id/secret per provider, for MCP servers
-  // whose authorization server doesn't expose a working DCR endpoint.
-  // Operator workflow: register an OAuth App with the provider, set
-  // callback URL to ${baseUrl}/v1/oauth/callback, copy the credentials
-  // here. Without these, /v1/oauth/authorize returns 501 with a remediation.
-  GITHUB_OAUTH_CLIENT_ID?: string;
-  GITHUB_OAUTH_CLIENT_SECRET?: string;
-  FEISHU_OAUTH_CLIENT_ID?: string;
-  FEISHU_OAUTH_CLIENT_SECRET?: string;
-  LARK_OAUTH_CLIENT_ID?: string;
-  LARK_OAUTH_CLIENT_SECRET?: string;
-  ASANA_OAUTH_CLIENT_ID?: string;
-  ASANA_OAUTH_CLIENT_SECRET?: string;
-  CLICKUP_OAUTH_CLIENT_ID?: string;
-  CLICKUP_OAUTH_CLIENT_SECRET?: string;
-  SLACK_OAUTH_CLIENT_ID?: string;
-  SLACK_OAUTH_CLIENT_SECRET?: string;
   ANTHROPIC_API_KEY: string;
   ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_MODEL?: string;
@@ -124,18 +101,12 @@ export interface Env {
   KV_NAMESPACE_ID?: string;
   RATE_LIMIT_WRITE?: number;
   RATE_LIMIT_READ?: number;
-  // Shared with apps/integrations gateway. Gates /v1/internal/* endpoints.
-  // Must match INTEGRATIONS_INTERNAL_SECRET on the integrations worker.
-  INTEGRATIONS_INTERNAL_SECRET?: string;
   // Shared with packages/billing/ in openma-hosted. Gates the
   // /v1/internal/usage_events read+ack endpoints used by the hosted
   // billing reconcile cron. Self-host deployments leave it unset and
   // the endpoint returns 503; the OSS billing path is unreachable
   // without an out-of-band billing worker anyway.
   BILLING_INTERNAL_SECRET?: string;
-  // Service binding to apps/integrations for proxying install initiation
-  // calls from the Console (single-origin, no CORS).
-  INTEGRATIONS?: Fetcher;
   // WorkerEntrypoint RPC binding from the agent worker to the main worker's
   // McpProxyRpc class — see apps/main/src/index.ts. Cloud agents call
   // `env.MAIN_MCP.mcpForward({tenantId, sessionId, serverName, ...})` so
@@ -203,9 +174,6 @@ export interface Env {
      */
     fetch(request: Request): Promise<Response>;
   };
-  // Public URL of the integrations gateway (used to build redirect URLs to
-  // OAuth callbacks etc. when the gateway is on a different host).
-  INTEGRATIONS_PUBLIC_URL?: string;
   // Used by integrations subsystem to sign tokens at rest. Gateway's value.
   PLATFORM_ROOT_SECRET?: string;
   // Killswitch for per-tenant D1 routing. Unset / "true" / anything else =

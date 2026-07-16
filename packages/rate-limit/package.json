@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./adapters/cf": "./src/adapters/cf.ts",
     "./adapters/memory": "./src/adapters/memory.ts"
   },
   "dependencies": {

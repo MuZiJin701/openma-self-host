@@ -7,5 +7,4 @@ export type {
 } from "./ports";
 export { listAll } from "./ports";
 
-export { CfKvStore, kvStoreFromKv } from "./adapters/cf";
 export { InMemoryKvStore } from "./adapters/in-memory";

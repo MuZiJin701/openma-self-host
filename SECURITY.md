@@ -22,10 +22,9 @@ you in the advisory unless you prefer to remain anonymous.
 ## Scope
 
 In scope:
-- The runtime (`apps/agent`, `apps/main`, `apps/main-node`,
-  `apps/integrations`, `apps/oma-vault`)
-- Published packages (`@openma/cli`, `@openma/sdk`)
-- Self-host deployment paths documented in `docs/self-host.md`
+- The self-host runtime (`apps/main-node`, `apps/oma-vault`)
+- The retained runtime packages and Console
+- Self-host deployment paths documented in `openma-self-host-operations.md`
 
 Out of scope:
 - Vulnerabilities in third-party LLM providers (Anthropic, OpenAI, etc.)

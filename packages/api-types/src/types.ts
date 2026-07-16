@@ -939,11 +939,8 @@ export interface CredentialAuth {
   authorization_server?: string; // cached OAuth authorization server URL
   // static_bearer / cap_cli fields
   token?: string;
-  // Provider tag: when set, the outbound proxy can request a token refresh
-  // via the integrations gateway (which holds the secrets needed to mint a
-  // fresh token — e.g. GitHub App private key). Used to support short-lived
-  // upstream tokens (GitHub installation tokens, ~1hr TTL).
-  provider?: "github" | "linear";
+  /** Optional provider label for generic credential routing. */
+  provider?: string;
   // cap_cli: inject credential when sandbox traffic matches a registered
   // cap CLI spec (gh, aws, kubectl, …). The token is held in main worker
   // and injected by the outbound proxy at HTTPS time — never enters the
@@ -1024,12 +1021,9 @@ export interface SessionResource {
   // on these values today (only Cloudflare's at-rest layer), and the
   // "secret" suffix was overpromising — see the type=text + mask toggle
   // in the New Session UI for the matching change.
-  type: "file" | "memory_store" | "github_repository" | "github_repo" | "env" | "env_secret";
+  type: "file" | "memory_store" | "env" | "env_secret";
   file_id?: string;
   memory_store_id?: string;
-  url?: string;
-  repo_url?: string;
-  checkout?: { type?: string; name?: string; sha?: string };
   name?: string;
   // authorization_token and value are NEVER stored in resource metadata
   // They go to separate KV keys: secret:{sessionId}:{resourceId}

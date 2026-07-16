@@ -28,7 +28,7 @@ import {
  * Pages that don't publish a `crumb` are skipped — the URL segment
  * fallback that an earlier draft used was dropped because it added
  * noise for placeholder routes that aren't navigated to as themselves
- * (e.g. `/integrations` parent that just hosts children).
+ * (e.g. a parent route that just hosts children).
  */
 type CrumbValue = string | { label: string; to?: string };
 type CrumbHandle = { crumb?: CrumbValue | ((m: UIMatch) => CrumbValue) };

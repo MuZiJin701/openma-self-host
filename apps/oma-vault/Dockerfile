@@ -25,12 +25,6 @@ WORKDIR /app
 # Workspace metadata first — code-only changes don't bust the install cache.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpm-approve-builds.json ./
 COPY apps/oma-vault/package.json apps/oma-vault/
-COPY apps/main-node/package.json apps/main-node/
-COPY apps/main/package.json apps/main/
-COPY apps/agent/package.json apps/agent/
-COPY apps/integrations/package.json apps/integrations/
-COPY apps/console/package.json apps/console/
-COPY apps/docs/package.json apps/docs/
 COPY packages packages
 
 RUN corepack enable \

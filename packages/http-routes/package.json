@@ -17,7 +17,6 @@
     "@open-managed-agents/environments-store": "workspace:*",
     "@open-managed-agents/evals-store": "workspace:*",
     "@open-managed-agents/event-log": "workspace:*",
-    "@open-managed-agents/integrations-core": "workspace:*",
     "@open-managed-agents/kv-store": "workspace:*",
     "@open-managed-agents/memory-store": "workspace:*",
     "@open-managed-agents/model-cards-store": "workspace:*",

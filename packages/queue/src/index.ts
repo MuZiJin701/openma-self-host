@@ -21,9 +21,6 @@ export type {
   EnqueueOptions,
 } from "./ports";
 
-export { createCfQueue, createCfDlq, dispatchCfBatch } from "./adapters/cf";
-export type { CfQueueDeps } from "./adapters/cf";
-
 export { createInMemoryQueue, createInMemoryDlq } from "./adapters/in-memory";
 
 export { createPgQueue, createPgDlq, ensureQueueSchema } from "./adapters/pg";

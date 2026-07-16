@@ -1,14 +1,9 @@
-// Node session-lifecycle hooks — Node companion to apps/main/src/lib/cf-session-lifecycle.ts.
+// Node session-lifecycle hooks for file promotion and cleanup.
 //
 // Implements only the hooks Node actually needs: `promoteSandboxFile`
 // (close the 500 from POST /v1/sessions/:id/files), and `cascadeDeleteFiles`
 // (delete file rows + blobs on session DELETE).
 //
-// CF-specific hooks (USAGE_METER gate, GitHub binding fast-path, vault
-// credential refresh) stay undefined here — Node has no equivalent today.
-// The package degrades gracefully: routes that look up `lifecycle?.foo`
-// just skip the hook.
-
 import {
   generateFileId,
   fileR2Key,

@@ -1,4 +1,4 @@
-// Bundle of services + integration points handed to every mount factory.
+// Bundle of services and lifecycle hooks handed to every mount factory.
 // Each runtime (CF / Node) constructs its own bundle and passes it in.
 // New routes get all of these via `services` — no implicit env / fetch
 // access leaks into route code.
@@ -105,7 +105,7 @@ export interface RouteServices {
   browser?: BrowserHarness | null;
 }
 
-/** Per-request services accessor. CF passes a callback that resolves
+/** Per-request services accessor. The Node server passes a callback that resolves
  *  RouteServices off `c.var.services` + `c.var.tenantDb`; Node passes a
  *  static bundle that the helper turns into a no-arg thunk. Use
  *  `resolveServices` in handlers, never read `deps.services` directly. */

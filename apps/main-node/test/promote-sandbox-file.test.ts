@@ -23,7 +23,10 @@ interface ProcessHandle {
 
 const REPO_ROOT = resolve(__dirname, "../../..");
 const MAIN_NODE_ENTRY = join(REPO_ROOT, "apps/main-node/src/index.ts");
-const TSX_BIN = join(REPO_ROOT, "apps/main-node/node_modules/.bin/tsx");
+const TSX_BIN = join(
+  REPO_ROOT,
+  `apps/main-node/node_modules/.bin/tsx${process.platform === "win32" ? ".cmd" : ""}`,
+);
 
 async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> {
   const port = await pickPort();
@@ -40,9 +43,11 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
       SESSION_OUTPUTS_DIR: join(opts.dataDir, "outputs"),
       AUTH_DISABLED: "1",
       BETTER_AUTH_SECRET: "test-secret-only-for-vitest",
+      PLATFORM_ROOT_SECRET: "test-platform-root-secret-for-vitest",
       NODE_ENV: "test",
     },
     stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
   });
   const logBuf: string[] = [];
   child.stdout?.on("data", (b: Buffer) => logBuf.push(b.toString()));
@@ -111,7 +116,20 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
     h = await startMainNode({ dataDir });
     const base = `http://localhost:${h.port}/v1`;
 
-    // 1. Create an agent (so the session has something to bind to).
+    // 1. Configure the model card required by the tenant-scoped API.
+    const cardRes = await fetch(`${base}/model_cards`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model_id: "claude-haiku-4-5-20251001",
+        provider: "anthropic",
+        api_key: "test-model-card-key",
+        is_default: true,
+      }),
+    });
+    expect(cardRes.status).toBe(201);
+
+    // 2. Create an agent (so the session has something to bind to).
     const aRes = await fetch(`${base}/agents`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -120,7 +138,7 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
     expect(aRes.status).toBe(201);
     const agent = (await aRes.json()) as { id: string };
 
-    // 2. Create a session. Body shape mirrors apps/main:
+    // 3. Create a session. Body shape mirrors apps/main:
     //    { agent: <id>, environment?: <id> } — environment defaults to
     //    `env_local_runtime` when an agent has a runtime_binding (Node has
     //    no cloud env_id concept yet, so loadEnvironment is unset and the
@@ -128,7 +146,7 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
     const sRes = await fetch(`${base}/sessions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent: agent.id, environment: "env_local_runtime" }),
+    body: JSON.stringify({ agent: agent.id, environment: "env-local-runtime" }),
     });
     if (sRes.status !== 201) {
       const body = await sRes.text();
@@ -136,7 +154,7 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
     }
     const session = (await sRes.json()) as { id: string };
 
-    // 3. Write a file inside the sandbox via /exec. LocalSubprocess
+    // 4. Write a file inside the sandbox via /exec. LocalSubprocess
     //    has cwd = workdir, so a bare relative path lands in the workdir
     //    which `readSandboxFile("/workspace/greeting.txt")` then resolves
     //    via the harness's /workspace → workdir mapping.
@@ -144,11 +162,15 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        command: "printf 'hello-from-sandbox' > greeting.txt",
+        command: process.platform === "win32"
+          ? "echo hello-from-sandbox>greeting.txt"
+          : "printf 'hello-from-sandbox' > greeting.txt",
         timeout_ms: 30_000,
       }),
     });
     expect(writeRes.status).toBe(200);
+    const writeResult = (await writeRes.json()) as { exit_code: number; output?: string };
+    expect(writeResult.exit_code, writeResult.output).toBe(0);
 
     // 4. Promote /workspace/greeting.txt to a file_id.
     const promoteRes = await fetch(`${base}/sessions/${session.id}/files`, {
@@ -179,6 +201,6 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
     // 6. GET /v1/files/:id/content returns the bytes.
     const contentRes = await fetch(`${base}/files/${fileRecord.id}/content`);
     expect(contentRes.status).toBe(200);
-    expect(await contentRes.text()).toBe("hello-from-sandbox");
+    expect((await contentRes.text()).trim()).toBe("hello-from-sandbox");
   }, 60_000);
 });

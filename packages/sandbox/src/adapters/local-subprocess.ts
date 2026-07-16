@@ -127,9 +127,15 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
   async exec(command: string, timeout?: number): Promise<string> {
     const timeoutMs = timeout ?? this.defaultTimeoutMs;
     const env = this.buildEnv(command);
+    const shell = process.platform === "win32"
+      ? (process.env.ComSpec ?? "cmd.exe")
+      : "/bin/sh";
+    const shellArgs = process.platform === "win32"
+      ? ["/d", "/s", "/c", command]
+      : ["-c", command];
 
     return new Promise<string>((resolveExec) => {
-      const child = spawn("/bin/sh", ["-c", command], {
+      const child = spawn(shell, shellArgs, {
         cwd: this.workdir,
         env,
         stdio: ["ignore", "pipe", "pipe"],
@@ -176,7 +182,13 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
 
   async startProcess(command: string): Promise<ProcessHandle | null> {
     const env = this.buildEnv(command);
-    const child = spawn("/bin/sh", ["-c", command], {
+    const shell = process.platform === "win32"
+      ? (process.env.ComSpec ?? "cmd.exe")
+      : "/bin/sh";
+    const shellArgs = process.platform === "win32"
+      ? ["/d", "/s", "/c", command]
+      : ["-c", command];
+    const child = spawn(shell, shellArgs, {
       cwd: this.workdir,
       env,
       stdio: ["ignore", "pipe", "pipe"],

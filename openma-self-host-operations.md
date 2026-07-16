@@ -47,9 +47,15 @@ pnpm test:e2e
 
 ## 当前不启用的功能
 
-Self-host Node 不挂载 Linear、GitHub、Slack Integrations，也不启动 OAuth、Webhook、
-Publication、InstallBridge 或 Integrations scheduler。`oma-vault` 仍然启用，用于租户凭据
-的出站注入。Integrations 数据库表目前只是未使用的 schema，不属于运行时功能。
+Self-host 构建链和 Node 运行时不包含 Linear、GitHub、Slack Integrations，也不启动 OAuth、
+Webhook、Publication、InstallBridge 或 Integrations scheduler。Node SQLite/Postgres 的
+全新数据库基线也不再创建这些表。`oma-vault` 仍然启用，用于租户凭据的出站注入。
+Cloudflare 官方应用目录中的上游 Integrations 源码不参与 self-host 构建。
+
+Console 当前只提供 Agent、Session、Workspace、Model Cards、Skills、
+`env-local-runtime` 和必要的凭据/API 设置页面。集成专用页面、菜单、客户端、头像素材、
+OAuth 授权回调和 Webhook 接收入口均不存在；Node 服务只托管 Console 静态文件，不启动
+任何 Integrations Worker。
 
 ## 租户范围服务
 
@@ -124,3 +130,19 @@ Skill 使用带租户前缀的 SQL 行和 BlobStore key 保存，路径格式为
 后端。Session provision 阶段会把 Agent 选中的 Skill 版本复制到
 `/mnt/skills/<skill>/<version>/`；Node subprocess 适配器会尝试将该目录设置为
 只读。这是可信 Agent 的便利功能，不是安全沙箱。
+
+## 构建检查
+
+推荐在 Node 22 下运行：
+
+```text
+pnpm install
+pnpm typecheck
+pnpm db:check
+pnpm --filter managed-agents-console typecheck
+pnpm --filter managed-agents-console build
+```
+
+Node 22 下可运行 better-sqlite3 原生测试；Windows 下的 Workspace backup tar 流程仍应
+在 Linux/Docker 环境中验证，因为其底层命令使用 Unix 风格 tar。官方兄弟仓库始终只读，
+交付前使用 `git -C ../open-managed-agents status --short` 复核为空。

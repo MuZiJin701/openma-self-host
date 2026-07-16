@@ -57,11 +57,16 @@
   Session 固定使用 `env-local-runtime`；资源和凭据隔离测试已通过。仍需补真实 HTTP 主链
   和 Agent 实际调用验证。
 - Integrations（Linear/GitHub/Slack、OAuth、Webhook、Publication、InstallBridge）已从
-  self-host Node 运行时移除；`oma-vault` 仍保留，因为它属于凭据注入链路，不是 Integrations。
-  Integrations 相关数据库表和通用源码包暂时保留但不挂载，避免引入无必要的迁移复杂度。
-- 当前工作区的原生 SQLite 测试受限于：没有可用的 Node 24
-  `better-sqlite3` 原生二进制，且缺少 C++ 构建工具链；纯队列测试和 TypeScript
-  检查仍可运行。
+  self-host 构建链、Node 运行时和 Node SQLite/Postgres 数据库基线删除；`oma-vault`
+  仍保留，因为它属于凭据注入链路，不是 Integrations。Cloudflare 官方应用仍携带的
+  上游 Integrations 源码不属于 self-host 构建产物。
+- Console 已恢复为由 `apps/main-node` 静态托管；Linear/GitHub/Slack 页面、菜单、
+  集成头像和 `/v1/integrations/*` 客户端均已删除，Node 不再挂载或启动 Integrations
+  服务。自部署 Console 的 MCP 凭据录入只接受显式 token，不再打开 OAuth 授权回调。
+- 已验证 Node 22 下原生 SQLite 测试可运行；Windows 下 Node 24 当前没有可用的
+  `better-sqlite3` 预编译二进制，推荐使用 Node 22。Workspace 文件提升测试和
+  Windows subprocess shell 兼容性已通过验证；Workspace backup 的 Unix tar 测试
+  仍需在 Linux/Docker 中验证。
 
 ## 当前改造顺序
 

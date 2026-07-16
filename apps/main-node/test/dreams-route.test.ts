@@ -15,7 +15,10 @@ interface ProcessHandle {
 
 const REPO_ROOT = resolve(__dirname, "../../..");
 const MAIN_NODE_ENTRY = join(REPO_ROOT, "apps/main-node/src/index.ts");
-const TSX_BIN = join(REPO_ROOT, "apps/main-node/node_modules/.bin/tsx");
+const TSX_BIN = join(
+  REPO_ROOT,
+  `apps/main-node/node_modules/.bin/tsx${process.platform === "win32" ? ".cmd" : ""}`,
+);
 
 const DREAM_HEADERS = {
   "content-type": "application/json",
@@ -115,6 +118,7 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
       NODE_ENV: "test",
     },
     stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
   });
   const logBuf: string[] = [];
   child.stdout?.on("data", (b: Buffer) => logBuf.push(b.toString()));

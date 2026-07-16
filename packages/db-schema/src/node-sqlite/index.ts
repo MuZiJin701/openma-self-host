@@ -1,4 +1,4 @@
-// Node self-host SQLite schema — union of cf-auth + cf-integrations +
+// Node self-host SQLite schema — union of cf-auth + cf-router,
 // cf-router, all SQLite-typed (no PG-typed columns).
 //
 // Self-host SQLite runs on better-sqlite3 against the same SQLite engine
@@ -10,6 +10,5 @@
 // drizzle-kit consumes this barrel via drizzle.node-sqlite.config.ts.
 
 export * from "../cf-auth";
-export * from "../cf-integrations";
 export * from "../cf-router";
 export * from "../self-host-skills";

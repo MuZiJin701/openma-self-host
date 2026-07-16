@@ -29,9 +29,8 @@ export interface SessionSecretRepo {
 
   /**
    * Read a secret payload. Returns `null` when no value is stored — used by
-   * SessionDO at warmup to decide whether to mount the secret into the sandbox
-   * container (some resources never had a secret to begin with, e.g. a
-   * `github_repository` without an authorization_token).
+   * the session runtime at warmup to decide whether to mount the secret into
+   * the sandbox container.
    */
   get(
     tenantId: string,

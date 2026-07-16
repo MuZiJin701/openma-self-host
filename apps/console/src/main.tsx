@@ -35,27 +35,8 @@ import { MemoryStoresList } from "./pages/MemoryStoresList";
 import { MemoryStoreDetail } from "./pages/MemoryStoreDetail";
 import { ModelCardsList } from "./pages/ModelCardsList";
 import { ApiKeysList } from "./pages/ApiKeysList";
-import { CliLogin } from "./pages/CliLogin";
-import { RuntimesList } from "./pages/RuntimesList";
-import { ConnectRuntime } from "./pages/ConnectRuntime";
 import { EvalRunsList } from "./pages/EvalRunsList";
 import { EvalRunDetail } from "./pages/EvalRunDetail";
-import {
-  IntegrationsLinearList,
-  IntegrationsLinearWorkspace,
-  IntegrationsLinearPublishPage,
-  IntegrationsLinearPatInstallPage,
-} from "./pages/IntegrationsLinear";
-import {
-  IntegrationsGitHubList,
-  IntegrationsGitHubWorkspace,
-  IntegrationsGitHubBindPage,
-} from "./pages/IntegrationsGitHub";
-import {
-  IntegrationsSlackList,
-  IntegrationsSlackWorkspace,
-  IntegrationsSlackPublishPage,
-} from "./pages/IntegrationsSlack";
 import { consolePlugins } from "./plugins/registry";
 
 /**
@@ -165,69 +146,6 @@ const protectedRoutes: RouteObject[] = [
   },
   { path: "model-cards", element: <ModelCardsList />, handle: { crumb: "Model Cards" } },
   { path: "api-keys", element: <ApiKeysList />, handle: { crumb: "API Keys" } },
-  { path: "runtimes", element: <RuntimesList />, handle: { crumb: "Local Runtimes" } },
-  {
-    path: "integrations",
-    handle: { crumb: "Integrations" },
-    children: [
-      {
-        path: "linear",
-        handle: { crumb: "Linear" },
-        children: [
-          { index: true, element: <IntegrationsLinearList /> },
-          {
-            path: "publish",
-            element: <IntegrationsLinearPublishPage />,
-            handle: { crumb: "Publish" },
-          },
-          {
-            path: "install-pat",
-            element: <IntegrationsLinearPatInstallPage />,
-            handle: { crumb: "Install PAT" },
-          },
-          {
-            path: "installations/:id",
-            element: <IntegrationsLinearWorkspace />,
-            handle: { crumb: "Workspace" },
-          },
-        ],
-      },
-      {
-        path: "github",
-        handle: { crumb: "GitHub" },
-        children: [
-          { index: true, element: <IntegrationsGitHubList /> },
-          {
-            path: "bind",
-            element: <IntegrationsGitHubBindPage />,
-            handle: { crumb: "Bind" },
-          },
-          {
-            path: "installations/:id",
-            element: <IntegrationsGitHubWorkspace />,
-            handle: { crumb: "Workspace" },
-          },
-        ],
-      },
-      {
-        path: "slack",
-        handle: { crumb: "Slack" },
-        children: [
-          { index: true, element: <IntegrationsSlackList /> },
-          {
-            path: "publish",
-            element: <IntegrationsSlackPublishPage />,
-            handle: { crumb: "Publish" },
-          },
-          {
-            path: "installations/:id",
-            element: <IntegrationsSlackWorkspace />,
-            handle: { crumb: "Workspace" },
-          },
-        ],
-      },
-    ],
-  },
   // Plugin-contributed routes (hosted-only extensions). Default empty in
   // OSS — hosted deploy overlays plugins/registry.ts to inject billing
   // / etc. PluginRoute keeps the same `{ path, element }` shape that
@@ -238,8 +156,6 @@ const protectedRoutes: RouteObject[] = [
 
 const router = createBrowserRouter([
   { path: "login", element: <Login /> },
-  { path: "cli/login", element: <CliLogin /> },
-  { path: "connect-runtime", element: <ConnectRuntime /> },
   {
     element: <AppShell />,
     children: protectedRoutes,

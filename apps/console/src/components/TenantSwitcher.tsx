@@ -214,7 +214,7 @@ function CreateTenantModal({
       <div className="space-y-4">
         <p className="text-sm text-fg-muted">
           A workspace is an isolated container for agents, sessions, vaults,
-          and integrations. You'll be the owner of the new one.
+          and resources. You'll be the owner of the new one.
         </p>
         <div>
           <label htmlFor="tenant-create-name" className="block text-xs uppercase tracking-wider text-fg-subtle mb-1">

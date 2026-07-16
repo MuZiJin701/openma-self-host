@@ -48,18 +48,6 @@ const STATUS_OPTIONS: { value: StatusValue; label: string }[] = [
 // Form schema (zod)
 // ────────────────────────────────────────────────────────────────────────
 
-/** GitHub repo resource. URL + token are required; the rest are optional
- *  knobs that submit() either passes through or computes a sensible
- *  default for (mount_path → /workspace/<repo-name>). */
-const GithubResourceSchema = z.object({
-  kind: z.literal("github"),
-  url: z.string().min(1, "Repository URL is required"),
-  token: z.string().min(1, "Authorization token is required"),
-  checkout_type: z.enum(["none", "branch", "commit"]),
-  checkout_name: z.string(),
-  mount_path: z.string(),
-});
-
 const FileResourceSchema = z.object({
   kind: z.literal("file"),
   file_id: z.string(),
@@ -82,7 +70,6 @@ const EnvResourceSchema = z.object({
 /** Discriminated union — `kind` selects which fields apply. Mapped to the
  *  wire `{type, ...}` resource object at submit time (see `onSubmit`). */
 const ResourceSchema = z.discriminatedUnion("kind", [
-  GithubResourceSchema,
   FileResourceSchema,
   MemoryStoreResourceSchema,
   EnvResourceSchema,
@@ -113,7 +100,6 @@ const INITIAL_FORM_VALUES: FormValues = {
 
 function blankResource(kind: ResourceRow["kind"]): ResourceRow {
   switch (kind) {
-    case "github": return { kind, url: "", token: "", checkout_type: "none", checkout_name: "", mount_path: "" };
     case "file": return { kind, file_id: "", mount_path: "" };
     case "memory_store": return { kind, memory_store_id: "", mount_path: "", access: "read_write" };
     case "env": return { kind, name: "", value: "" };
@@ -122,76 +108,10 @@ function blankResource(kind: ResourceRow["kind"]): ResourceRow {
 
 function kindLabel(kind: ResourceRow["kind"]): string {
   switch (kind) {
-    case "github": return "GitHub repository";
     case "file": return "File";
     case "memory_store": return "Memory store";
     case "env": return "Environment variable";
   }
-}
-
-/** Best-effort `<repo-name>` extraction from GitHub URL forms. Used to
- *  derive the default mount path /workspace/<repo-name>. Returns null when
- *  the URL doesn't look like GitHub (caller falls back to /workspace). */
-function parseGitHubRepoName(url: string): string | null {
-  const trimmed = url.trim().replace(/\.git$/, "");
-  if (!trimmed) return null;
-  // Full URL: https://github.com/owner/repo
-  try {
-    const u = new URL(trimmed);
-    if (u.hostname !== "github.com" && u.hostname !== "www.github.com") return null;
-    const parts = u.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
-    return parts[1] || null;
-  } catch {
-    // SSH: git@github.com:owner/repo
-    const ssh = trimmed.match(/^git@github\.com:[^/]+\/([^/]+)$/);
-    if (ssh) return ssh[1];
-    // Bare: owner/repo
-    const bare = trimmed.match(/^[^/]+\/([^/]+)$/);
-    if (bare) return bare[1];
-    return null;
-  }
-}
-
-function defaultMountPath(githubUrl: string): string {
-  const name = parseGitHubRepoName(githubUrl);
-  return name ? `/workspace/${name}` : "/workspace";
-}
-
-/** Tiny "🔗 Linear" pill shown when a session was triggered by a Linear webhook. */
-function LinearBadge({ metadata }: { metadata?: Record<string, unknown> }) {
-  const linear = metadata?.linear as
-    | { issueIdentifier?: string; issueId?: string; workspaceId?: string }
-    | undefined;
-  if (!linear || (!linear.issueId && !linear.issueIdentifier)) return null;
-  return (
-    <span
-      className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-info-subtle text-info"
-      title={`Linear issue ${linear.issueIdentifier ?? linear.issueId}`}
-    >
-      🔗 {linear.issueIdentifier ?? "Linear"}
-    </span>
-  );
-}
-
-/** Tiny "💬 Slack" pill shown when a session was triggered by a Slack event. */
-function SlackBadge({ metadata }: { metadata?: Record<string, unknown> }) {
-  const slack = metadata?.slack as
-    | { channelId?: string; threadTs?: string; workspaceId?: string }
-    | undefined;
-  if (!slack || (!slack.channelId && !slack.threadTs)) return null;
-  const label = slack.channelId
-    ? slack.channelId.startsWith("D")
-      ? "DM"
-      : slack.channelId
-    : "Slack";
-  return (
-    <span
-      className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-accent-violet-subtle text-accent-violet"
-      title={`Slack channel ${slack.channelId}${slack.threadTs ? ` thread ${slack.threadTs}` : ""}`}
-    >
-      💬 {label}
-    </span>
-  );
 }
 
 /** Tiny "🧪 Eval" pill shown when a session was spawned by an eval-runner trial. */
@@ -233,7 +153,7 @@ export function SessionsList() {
   const [memoryStores, setMemoryStores] = useState<MemoryStorePick[]>([]);
   const [, setAuxLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  // Per-field reveal toggle for any masked input (env value, github token).
+  // Per-field reveal toggle for masked environment values.
   // Keyed by `${idx}:${field}`. We intentionally don't try to keep stale
   // entries valid across resource list mutations — adding/removing a row
   // just clears the set, which costs at worst one re-click.
@@ -497,26 +417,7 @@ export function SessionsList() {
     try {
       const resources: Array<Record<string, unknown>> = [];
       for (const r of data.resources) {
-        if (r.kind === "github") {
-          // Token is required — schema gates the Create button on this,
-          // but we double-check so a stale row from a previous validation
-          // pass can't slip through.
-          if (!r.url || !r.token) continue;
-          const res: Record<string, unknown> = {
-            type: "github_repository",
-            url: r.url,
-            authorization_token: r.token,
-            // Always send mount_path: derive /workspace/<repo-name> from the
-            // URL when the user left it blank. Mirrors the in-form preview.
-            mount_path: r.mount_path || defaultMountPath(r.url),
-          };
-          if (r.checkout_type === "branch" && r.checkout_name) {
-            res.checkout = { type: "branch", name: r.checkout_name };
-          } else if (r.checkout_type === "commit" && r.checkout_name) {
-            res.checkout = { type: "commit", sha: r.checkout_name };
-          }
-          resources.push(res);
-        } else if (r.kind === "file") {
+        if (r.kind === "file") {
           if (!r.file_id) continue;
           const res: Record<string, unknown> = { type: "file", file_id: r.file_id };
           if (r.mount_path) res.mount_path = r.mount_path;
@@ -666,18 +567,6 @@ export function SessionsList() {
     </>
   );
 
-  // First github row index + total count, computed once per render so the
-  // "primary" pill on the first GitHub row stays in sync with reorders.
-  // The proxy resolver uses the first declared github_repository's token
-  // for any request whose URL doesn't carry an owner/repo slug (graphql,
-  // /user, /search, …). Only show the hint when there are 2+ github
-  // resources — for a single repo the "first" semantics aren't meaningful.
-  const githubIdxs = resourceFields
-    .map((r, i) => (r.kind === "github" ? i : -1))
-    .filter((i) => i >= 0);
-  const firstGithubIdx = githubIdxs[0] ?? -1;
-  const showPrimaryHint = githubIdxs.length > 1;
-
   // Show validation errors only after the field has been touched (or after
   // submit), so the form doesn't render with errors visible on first open.
   const showError = (touched: boolean | undefined, msg: string | undefined) =>
@@ -726,8 +615,6 @@ export function SessionsList() {
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-2 font-medium text-fg">
             {row.original.title || "Untitled"}
-            <LinearBadge metadata={row.original.metadata} />
-            <SlackBadge metadata={row.original.metadata} />
             <EvalBadge metadata={row.original.metadata} />
           </span>
         ),
@@ -998,7 +885,7 @@ export function SessionsList() {
               <label className="text-sm text-fg-muted">Resources <span className="text-fg-subtle">(optional)</span></label>
             </div>
             <p className="text-xs text-fg-subtle mb-2">
-              Mount files, GitHub repositories, memory stores, or pass environment variables into the session.
+              Mount files, memory stores, or pass environment variables into the session.
             </p>
             {resourceFields.length === 0 ? (
               <div className="text-xs text-fg-subtle border border-dashed border-border rounded-lg px-3 py-3 text-center">
@@ -1018,14 +905,6 @@ export function SessionsList() {
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-fg inline-flex items-center gap-2">
                           {kindLabel(live.kind)}
-                          {showPrimaryHint && live.kind === "github" && i === firstGithubIdx && (
-                            <span
-                              className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand/10 border border-brand/30 text-brand"
-                              title="This repo's token is used for GitHub API calls that don't target a specific repo (GraphQL, Search, /user, …)"
-                            >
-                              primary
-                            </span>
-                          )}
                         </span>
                         <button
                           type="button"
@@ -1036,99 +915,6 @@ export function SessionsList() {
                           Remove
                         </button>
                       </div>
-                      {live.kind === "github" && (
-                        <div className="space-y-2">
-                          <div>
-                            <label htmlFor={`session-resource-${i}-url`} className="text-xs text-fg-muted block mb-0.5">Repository URL <span className="text-danger">*</span></label>
-                            <input
-                              id={`session-resource-${i}-url`}
-                              {...register(`resources.${i}.url`)}
-                              className={inputCls}
-                              placeholder="https://github.com/owner/repo"
-                            />
-                            {showError(
-                              resourceFieldTouched(i, "url"),
-                              resourceFieldError(i, "url"),
-                            ) && (
-                              <p className="text-xs text-danger mt-1">
-                                {resourceFieldError(i, "url")}
-                              </p>
-                            )}
-                          </div>
-                          <div>
-                            <label htmlFor={`session-resource-${i}-token`} className="text-xs text-fg-muted block mb-0.5">
-                              Authorization Token <span className="text-danger">*</span>
-                            </label>
-                            <div className="relative">
-                              <input
-                                id={`session-resource-${i}-token`}
-                                type={revealedSecrets.has(`${i}:token`) ? "text" : "password"}
-                                {...register(`resources.${i}.token`)}
-                                className={`${inputCls} pr-12`}
-                                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                              />
-                              {live.token && (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleReveal(`${i}:token`)}
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 px-1 text-xs text-fg-subtle hover:text-fg"
-                                  aria-label="Toggle token visibility"
-                                >
-                                  {revealedSecrets.has(`${i}:token`) ? "hide" : "show"}
-                                </button>
-                              )}
-                            </div>
-                            {showError(
-                              resourceFieldTouched(i, "token"),
-                              resourceFieldError(i, "token"),
-                            ) && (
-                              <p className="text-xs text-danger mt-1">
-                                {resourceFieldError(i, "token")}
-                              </p>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label htmlFor={`session-resource-${i}-checkout-type`} className="text-xs text-fg-muted block mb-0.5">Checkout</label>
-                              <select
-                                id={`session-resource-${i}-checkout-type`}
-                                {...register(`resources.${i}.checkout_type`, {
-                                  // Switching the checkout kind clears the
-                                  // companion name so the placeholder hint
-                                  // doesn't lie about commit-vs-branch.
-                                  onChange: () => setValue(`resources.${i}.checkout_name`, ""),
-                                })}
-                                className={inputCls}
-                              >
-                                <option value="none">None</option>
-                                <option value="branch">Branch</option>
-                                <option value="commit">Commit</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label htmlFor={`session-resource-${i}-checkout-name`} className="text-xs text-fg-muted block mb-0.5">
-                                {live.checkout_type === "commit" ? "Commit SHA" : "Name"}
-                              </label>
-                              <input
-                                id={`session-resource-${i}-checkout-name`}
-                                {...register(`resources.${i}.checkout_name`)}
-                                className={inputCls}
-                                disabled={live.checkout_type === "none"}
-                                placeholder={live.checkout_type === "commit" ? "abc123..." : "main"}
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <label htmlFor={`session-resource-${i}-mount`} className="text-xs text-fg-muted block mb-0.5">Mount Path <span className="text-fg-subtle">(optional)</span></label>
-                            <input
-                              id={`session-resource-${i}-mount`}
-                              {...register(`resources.${i}.mount_path`)}
-                              className={inputCls}
-                              placeholder={`${defaultMountPath(live.url)} (default)`}
-                            />
-                          </div>
-                        </div>
-                      )}
                       {live.kind === "file" && (
                         <div className="space-y-2">
                           <div>
@@ -1248,7 +1034,6 @@ export function SessionsList() {
               </div>
             )}
             <div className="flex flex-wrap gap-2 mt-2">
-              <button type="button" onClick={() => addResource("github")} className="inline-flex items-center justify-center min-h-11 sm:min-h-0 text-xs px-2.5 py-1.5 border border-border rounded-md hover:bg-bg-surface text-fg-muted hover:text-fg">+ GitHub repo</button>
               <button type="button" onClick={() => addResource("file")} className="inline-flex items-center justify-center min-h-11 sm:min-h-0 text-xs px-2.5 py-1.5 border border-border rounded-md hover:bg-bg-surface text-fg-muted hover:text-fg">+ File</button>
               <button type="button" onClick={() => addResource("memory_store")} className="inline-flex items-center justify-center min-h-11 sm:min-h-0 text-xs px-2.5 py-1.5 border border-border rounded-md hover:bg-bg-surface text-fg-muted hover:text-fg">+ Memory store</button>
               <button type="button" onClick={() => addResource("env")} className="inline-flex items-center justify-center min-h-11 sm:min-h-0 text-xs px-2.5 py-1.5 border border-border rounded-md hover:bg-bg-surface text-fg-muted hover:text-fg">+ Env var</button>

@@ -53,19 +53,3 @@ export type { EvalRoutesDeps, EvalTaskSpec } from "./evals";
 export { buildModelCardRoutes } from "./model-cards";
 export { buildEnvironmentRoutes } from "./environments";
 export { buildSkillRoutes } from "./skills";
-
-export { buildIntegrationsRoutes } from "./integrations";
-export type {
-  IntegrationsRoutesDeps,
-  IntegrationsBags,
-  IntegrationsRepoBag,
-  InstallProxyForwarder,
-} from "./integrations";
-
-export { buildIntegrationsGatewayRoutes } from "./integrations/gateway";
-export type {
-  IntegrationsGatewayDeps,
-  WebhookHandler,
-  WebhookHandlers,
-  RateLimitHooks,
-} from "./integrations/gateway";

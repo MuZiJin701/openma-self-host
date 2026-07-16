@@ -46,7 +46,10 @@ const MAIN_NODE_ENTRY = join(REPO_ROOT, "apps/main-node/src/index.ts");
 // child runs with `cwd: REPO_ROOT` but tsx is hoisted to a different
 // node_modules layout. Pointing at the binary by absolute path is the
 // most portable fix.
-const TSX_BIN = join(REPO_ROOT, "apps/main-node/node_modules/.bin/tsx");
+const TSX_BIN = join(
+  REPO_ROOT,
+  `apps/main-node/node_modules/.bin/tsx${process.platform === "win32" ? ".cmd" : ""}`,
+);
 
 async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> {
   // Run the real binary via tsx (same toolchain `pnpm start` uses).
@@ -76,6 +79,7 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
         NODE_ENV: "test",
       },
       stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "win32",
     },
   );
 
