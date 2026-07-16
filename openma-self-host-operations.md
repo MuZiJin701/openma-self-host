@@ -1,19 +1,19 @@
-# openma-self-host Operations
+# openma-self-host 运维与技术知识
 
-## Local deployment
+## 本地部署
 
-- SQLite deployment: `docker compose -f docker-compose.yml up --build`.
-- Postgres deployment: `docker compose -f docker-compose.postgres.yml up --build`.
-- The default Node port is `8787`; the workspace-level deployment may map host port `8008` to the container.
-- Persistent state is under `data/`; do not delete it during normal development or migration work.
+- SQLite 部署：`docker compose -f docker-compose.yml up --build`。
+- Postgres 部署：`docker compose -f docker-compose.postgres.yml up --build`。
+- Node 默认端口为 `8787`；工作区级部署可能将宿主机 `8008` 映射到容器端口。
+- 持久化状态位于 `data/`；日常开发或迁移过程中不得删除该目录。
 
-## Runtime defaults
+## 运行时默认值
 
-- `SANDBOX_PROVIDER=subprocess`.
-- Every Node session currently executes against `env-local-runtime`.
-- localfs is the first BlobStore backend; S3-compatible storage is required for shared multi-replica files.
+- `SANDBOX_PROVIDER=subprocess`。
+- 当前每个 Node Session 都使用 `env-local-runtime`。
+- 第一阶段使用 localfs 作为 BlobStore；多副本共享文件必须使用兼容 S3 的存储。
 
-## Verification
+## 验证命令
 
 ```text
 pnpm typecheck
@@ -22,52 +22,55 @@ pnpm db:check
 pnpm test:e2e
 ```
 
-This environment has verified Docker Desktop 4.82.0, Docker Engine 29.6.1,
-Compose v5.3.0, and the WSL2 backend. The multi-replica test environment does
-not publish Postgres to the host; tests run inside a Node container. The runtime
-image uses the `node` user, so Vitest's temporary directory requires a test
-image or an explicit root user when running tests.
+本环境已验证 Docker Desktop 4.82.0、Docker Engine 29.6.1、Compose v5.3.0
+和 WSL2 backend。双副本测试环境不发布 Postgres 端口到宿主机，测试命令在 Node
+容器内执行；运行镜像默认用户是 `node`，Vitest 临时目录需要使用专用测试镜像
+或测试时显式使用 root。
 
-The official sibling repository is a read-only reference. Upstream changes are fetched and manually evaluated before selective integration.
+官方兄弟仓库是只读参考。只有在手动评估 upstream 改动后，才允许选择性集成。
 
-## Tenant-scoped services
+## 租户范围服务
 
-Node keeps a legacy `kv` fixture for compatibility but production route wiring also exposes `kvForTenant(tenantId)`. Authenticated request paths should resolve KV through the request tenant and must not reuse the process-wide `default` adapter.
+Node 为兼容旧测试 fixture 保留 `kv`，同时在生产路由中提供
+`kvForTenant(tenantId)`。经过认证的请求必须根据当前请求租户解析 KV，不能继续
+复用进程级的 `default` 适配器。
 
-## Session queue
+## Session 队列
 
-Inbound `user.message`, `user.tool_confirmation`, and
-`user.custom_tool_result` events are written to the additive
-`session_pending_events` table. `SerialSessionTurnExecutor` drains one
-Session FIFO at a time while allowing independent Sessions to run in parallel.
-Promotion writes the canonical `session_events` row and removes the pending row
-in one SQL batch and records a `session_turn_runs` ledger row; duplicate event
-IDs are ignored. The startup registry scan re-arms Sessions with active pending
-rows and promoted/running ledger rows that did not reach completion.
+传入的 `user.message`、`user.tool_confirmation` 和
+`user.custom_tool_result` 事件会写入增量表 `session_pending_events`。
+`SerialSessionTurnExecutor` 每次只处理一个 Session 的 FIFO 队列，同时允许互相
+独立的 Session 并行运行。
 
-The pure scheduler check is:
+Promote 会在同一个 SQL batch 中写入 canonical `session_events` 记录并删除
+pending 记录，同时记录 `session_turn_runs` ledger；重复的 event ID 会被忽略。
+服务启动时，Registry 会重新唤醒仍有 active pending 记录的 Session，以及已经
+promote 或运行中但尚未完成的 ledger 记录。
+
+纯调度器检查命令：
 
 ```text
 pnpm --filter @open-managed-agents/main-node exec vitest run test/session-queue.test.ts
 ```
 
-The SQLite integration tests require a working `better-sqlite3` native binding.
+SQLite 集成测试需要可用的 `better-sqlite3` 原生绑定。
 
-## WorkerPool and observability
+## WorkerPool 与可观测性
 
-Node uses one process-wide WorkerPool. `WORKER_MAX_ACTIVE` bounds total active
-turns, `TENANT_MAX_ACTIVE` bounds a tenant's active turns, and
-`TURN_TIMEOUT_MS` aborts a turn after the configured duration (`0` disables the
-timeout). Queue and turn lifecycle counters/histograms are exposed at
-`/metrics`; set `METRICS_BIND_TOKEN` when the endpoint is not behind a trusted
-reverse proxy.
+Node 使用一个进程级 WorkerPool。`WORKER_MAX_ACTIVE` 限制全局 active turn 数量，
+`TENANT_MAX_ACTIVE` 限制单个租户的 active turn 数量，`TURN_TIMEOUT_MS` 在达到
+配置时长后中止 turn；设置为 `0` 表示禁用超时。队列和 turn 生命周期的计数器及
+直方图通过 `/metrics` 暴露；当该接口没有位于可信反向代理之后时，应设置
+`METRICS_BIND_TOKEN`。
 
-## Postgres multi-replica validation
+## Postgres 多副本验证
 
-The intended validation topology is in `docker-compose.postgres-multi.yml`: two
-Node replicas share Postgres and MinIO-compatible BlobStore buckets. The Compose
-file uses an API-only build, and replica B waits for replica A's `/health` before
-starting to avoid concurrent initial Drizzle migrations. Start and test it with:
+目标验证拓扑位于 `docker-compose.postgres-multi.yml`：两个 Node 副本共享
+Postgres 和兼容 MinIO 的 BlobStore bucket。该 Compose 文件使用 API-only 构建，
+副本 B 等待副本 A 的 `/health` 通过后才启动，以避免两个副本首次并发执行
+Drizzle migration。
+
+启动和测试：
 
 ```text
 docker compose -f docker-compose.postgres-multi.yml up --build -d
@@ -75,32 +78,26 @@ docker compose -f docker-compose.postgres-multi.yml exec -T --user root oma-serv
 docker compose -f docker-compose.postgres-multi.yml down
 ```
 
-`multi-replica.test.ts` passes 3/3: A/B health and shared backends, 12 queue
-messages claimed without duplicates, and cross-hub fanout. The existing
-`pg-queue.test.ts` and `pg-fanout.test.ts` pass 6/6 together. The Compose file is
-a validation harness, not a production secret configuration. Real cross-replica
-Session turns, crash recovery, SSE resume, and S3-compatible workspace backup
-remain unverified.
+已验证 `multi-replica.test.ts` 通过 3/3：A/B 健康和共享后端、12 条 queue
+消息无重复领取、跨 hub fanout。已有 `pg-queue.test.ts` 与 `pg-fanout.test.ts`
+合计通过 6/6。该 Compose 文件是验证工具，不是生产密钥配置；目前仍未验证真实
+跨副本 Session turn、crash recovery、SSE resume 和 S3-compatible workspace backup。
 
-## Model Cards and Environments
+## Model Cards 与 Environments
 
-Model Cards are tenant-scoped and are resolved by the Node runtime through the
-Model Card store. Set `PLATFORM_ROOT_SECRET` before creating cards; the service
-uses it to protect provider credentials. API responses expose only safe card
-metadata and key previews. A process-level provider key is accepted only when
-`AUTH_DISABLED=1`, for local single-user development.
+Model Card 按租户隔离，由 Node 运行时通过 Model Card Store 解析。创建 Model Card
+前必须设置 `PLATFORM_ROOT_SECRET`；服务用它保护 Provider 凭据。API 响应只返回
+安全的卡片元数据和 Key preview。进程级 Provider Key 只允许在
+`AUTH_DISABLED=1` 的本地单用户开发模式下使用。
 
-Environment resources are tenant-scoped CRUD records. Session execution is
-currently restricted to the built-in `env-local-runtime`; requesting another
-environment returns `environment_not_supported`.
+Environment 资源是按租户隔离的 CRUD 记录。当前 Session 执行仅支持内置的
+`env-local-runtime`；请求其他 Environment 会返回 `environment_not_supported`。
 
 ## Skills
 
-Skills are stored with tenant-qualified SQL rows and BlobStore keys under
-`t/<tenant>/skills/<skill>/<version>/`. A version cannot be overwritten. The
-Node service uses localfs through `FILES_BLOB_DIR` by default and can use the
-existing S3-compatible backend when `FILES_S3_*` is configured. During session
-provisioning, an Agent's selected skill versions are copied to
-`/mnt/skills/<skill>/<version>/`; the Node subprocess adapter attempts to make
-that tree read-only. This is a trusted-Agent convenience, not a security
-sandbox.
+Skill 使用带租户前缀的 SQL 行和 BlobStore key 保存，路径格式为
+`t/<tenant>/skills/<skill>/<version>/`。版本不可覆盖。Node 服务默认通过
+`FILES_BLOB_DIR` 使用 localfs；配置 `FILES_S3_*` 后可以使用现有的兼容 S3
+后端。Session provision 阶段会把 Agent 选中的 Skill 版本复制到
+`/mnt/skills/<skill>/<version>/`；Node subprocess 适配器会尝试将该目录设置为
+只读。这是可信 Agent 的便利功能，不是安全沙箱。
