@@ -75,6 +75,9 @@
 - 本机 WSL2 Ubuntu 已运行（版本 2），但 Ubuntu 内当前没有 Docker CLI/Engine；Windows
   `docker` 命令仍连接 Docker Desktop 的 `desktop-linux` context。直接在 WSL 安装
   Docker Engine 是可行且适合本项目 Linux/Docker 测试的方向，尚未执行安装或切换。
+- WSL 构建、测试和 Docker 运行固定使用 `/mnt/d/data/projects/practice/claude_agent_cloud/openma-self-host`，
+  与 Windows 工作目录共享同一份文件；接受 `/mnt/d` 跨文件系统 I/O 较慢的权衡，不在 WSL
+  另建项目副本。
 
 ## 当前改造顺序
 

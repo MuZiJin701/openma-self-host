@@ -35,11 +35,19 @@ docker version
 docker compose version
 ```
 
-WSL 内建议将 self-host 工作副本放在 Linux 文件系统，例如 `~/src/openma-self-host`，
-不要长期在 `/mnt/d/...` 上运行高频 TypeScript、SQLite 或 `node_modules` 操作。官方仓库
-仍只读，只复制或克隆 `openma-self-host` 到 WSL 内进行构建。完成准备后可运行：
+本项目约定 WSL 内统一使用 Windows 共享工作副本，不再另建 Linux 文件系统副本：
+
+```text
+/mnt/d/data/projects/practice/claude_agent_cloud/openma-self-host
+```
+
+这样 WSL 构建、测试、Docker 运行与 Windows 工作目录保持一致，也避免维护两份副本。
+代价是 `/mnt/d` 的跨文件系统 I/O 可能比 WSL Linux 文件系统慢，尤其是 TypeScript、
+`node_modules`、SQLite 和 Docker build context；当前项目优先保证路径和数据一致性。官方仓库
+仍只读，不在 WSL 中复制或克隆第二份项目。完成准备后可运行：
 
 ```bash
+cd /mnt/d/data/projects/practice/claude_agent_cloud/openma-self-host
 pnpm install
 pnpm typecheck
 pnpm db:check
