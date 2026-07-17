@@ -37,7 +37,7 @@
     "cmdk": "^1.1.1",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "highlight.js": "^11.11.1",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^5.2.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.16.0",
     "motion": "^12.38.0",
