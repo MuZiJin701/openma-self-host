@@ -245,7 +245,7 @@ export interface AgentThinkingStreamEndEvent extends EventBase {
 }
 
 /** Live tool-input streaming. `tool_use_id` is the same id the eventual
- *  `agent.tool_use` / `agent.mcp_tool_use` / `agent.custom_tool_use`
+ *  `agent.tool_use` / `agent.custom_tool_use`
  *  carries, so the client can swap the in-flight bubble for the
  *  canonical tool widget once the model commits the call. NOT persisted. */
 export interface AgentToolUseInputStreamStartEvent extends EventBase {
@@ -327,21 +327,6 @@ export interface SessionStatusEvent extends EventBase {
     // requires_action sub-type for SDK routing
     action_type?: "tool_confirmation" | "custom_tool_result";
   };
-}
-
-export interface AgentMcpToolUseEvent extends EventBase {
-  type: "agent.mcp_tool_use";
-  id: string;
-  mcp_server_name: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-export interface AgentMcpToolResultEvent extends EventBase {
-  type: "agent.mcp_tool_result";
-  mcp_tool_use_id: string;
-  content: string;
-  is_error?: boolean;
 }
 
 export interface SessionErrorEvent extends EventBase {
@@ -573,8 +558,6 @@ export type SessionEvent =
   | AgentCustomToolUseEvent
   | AgentToolUseEvent
   | AgentToolResultEvent
-  | AgentMcpToolUseEvent
-  | AgentMcpToolResultEvent
   | AgentThreadMessageEvent
   | AgentThreadMessageSentEvent
   | AgentThreadMessageReceivedEvent
@@ -622,8 +605,6 @@ export const SPEC_EVENT_TYPES: ReadonlySet<string> = new Set([
   "agent.thinking",
   "agent.tool_use",
   "agent.tool_result",
-  "agent.mcp_tool_use",
-  "agent.mcp_tool_result",
   "agent.custom_tool_use",
   "agent.thread_message_received",
   "agent.thread_message_sent",

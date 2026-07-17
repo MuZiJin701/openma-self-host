@@ -14,8 +14,6 @@ export interface Event {
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
-  mcp_tool_use_id?: string;
-  mcp_server_name?: string;
   error?: string;
   source?: string;
   message?: string;

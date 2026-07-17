@@ -7,7 +7,7 @@
 //   1. Streams left status='streaming' by a dead runtime. Finalized as
 //      'interrupted' + a placeholder agent.message is appended carrying
 //      whatever chunks were buffered.
-//   2. agent.tool_use / agent.mcp_tool_use rows with no matching
+//   2. agent.tool_use rows with no matching
 //      result. Anthropic 400s on the next turn if the bijection breaks,
 //      so a placeholder result is injected. agent.custom_tool_use is
 //      surfaced as a warning only — the matching user.custom_tool_result
@@ -24,7 +24,6 @@
 //   ✓ stuck stream with no chunks → placeholder text
 //   ✓ multiple stuck streams → all finalized, all surfaced as warnings
 //   ✓ orphan agent.tool_use → placeholder agent.tool_result injected
-//   ✓ orphan agent.mcp_tool_use → placeholder agent.mcp_tool_result injected (is_error=true)
 //   ✓ orphan agent.custom_tool_use → warning, NO event injected
 //   ✓ tool_use with matching tool_result → not touched
 //   ✓ mixed: some resolved, some orphan → only orphan handled
@@ -69,7 +68,6 @@ describe("recoverInterruptedState", () => {
     const report = await recoverInterruptedState(f.streams, f.log);
     expect(report.finalizedStreams).toEqual([]);
     expect(report.injectedToolResults).toEqual([]);
-    expect(report.injectedMcpToolResults).toEqual([]);
     expect(report.pendingCustomToolUses).toEqual([]);
     expect(report.warnings).toEqual([]);
     expect(f.allEvents()).toEqual([]);
@@ -140,7 +138,6 @@ describe("recoverInterruptedState", () => {
     const report = await recoverInterruptedState(f.streams, f.log);
 
     expect(report.injectedToolResults).toEqual(["use_orphan"]);
-    expect(report.injectedMcpToolResults).toEqual([]);
     const events = f.allEvents() as Array<{
       type: string;
       tool_use_id?: string;
@@ -155,29 +152,6 @@ describe("recoverInterruptedState", () => {
     expect(events[0].type).toBe("agent.tool_use");
   });
 
-  it("orphan agent.mcp_tool_use → placeholder agent.mcp_tool_result injected with is_error=true", async () => {
-    f.log.append({
-      type: "agent.mcp_tool_use",
-      id: "mcp_use_orphan",
-      name: "search",
-      server_name: "tavily",
-      input: { q: "anthropic" },
-    } as unknown as SessionEvent);
-
-    const report = await recoverInterruptedState(f.streams, f.log);
-
-    expect(report.injectedToolResults).toEqual([]);
-    expect(report.injectedMcpToolResults).toEqual(["mcp_use_orphan"]);
-    const events = f.allEvents() as Array<{
-      type: string;
-      mcp_tool_use_id?: string;
-      is_error?: boolean;
-    }>;
-    expect(events[1].type).toBe("agent.mcp_tool_result");
-    expect(events[1].mcp_tool_use_id).toBe("mcp_use_orphan");
-    expect(events[1].is_error).toBe(true);
-  });
-
   it("orphan agent.custom_tool_use → surfaced as warning, NO event injected (user-driven)", async () => {
     f.log.append({
       type: "agent.custom_tool_use",
@@ -190,7 +164,6 @@ describe("recoverInterruptedState", () => {
 
     expect(report.pendingCustomToolUses).toEqual(["custom_orphan"]);
     expect(report.injectedToolResults).toEqual([]);
-    expect(report.injectedMcpToolResults).toEqual([]);
     expect(report.warnings).toHaveLength(1);
     expect(report.warnings[0].source).toBe("custom_tool_call_interrupted");
     // Critical: NO new event in the log. The original tool_use stands
@@ -243,38 +216,6 @@ describe("recoverInterruptedState", () => {
     expect(events).toHaveLength(4);
     expect(events[3].type).toBe("agent.tool_result");
     expect(events[3].tool_use_id).toBe("use_dangling");
-  });
-
-  it("mcp_use resolved with mcp_result is not touched even if names overlap with a separate tool_use", async () => {
-    // Defensive: tool_use_id and mcp_tool_use_id are separate namespaces
-    // — the matcher must not cross-resolve a real tool_use using an MCP
-    // result whose mcp_tool_use_id happens to equal the use's id.
-    f.log.append({
-      type: "agent.tool_use",
-      id: "id_overlap",
-      name: "bash",
-    } as unknown as SessionEvent);
-    f.log.append({
-      type: "agent.mcp_tool_result",
-      mcp_tool_use_id: "id_overlap", // wrong namespace — must NOT resolve the bash tool_use
-      content: "ok",
-    } as unknown as SessionEvent);
-
-    const report = await recoverInterruptedState(f.streams, f.log);
-
-    // The orphan tool_use must still be injected. (Since the recovery
-    // implementation tracks resolved by id alone, a same-id mcp_tool_result
-    // will currently mark it resolved — this test pins current behaviour.
-    // If we ever tighten the namespacing, flip this expectation.)
-    // Documenting either way: this is the contract a future change must
-    // explicitly choose to alter.
-    if (report.injectedToolResults.includes("id_overlap")) {
-      // Strict-namespace behaviour.
-      expect(report.injectedToolResults).toEqual(["id_overlap"]);
-    } else {
-      // Permissive (current) behaviour: resolved by id regardless of namespace.
-      expect(report.injectedToolResults).toEqual([]);
-    }
   });
 
   it("idempotent: a second recovery pass after the first is a no-op", async () => {
@@ -334,7 +275,7 @@ describe("recoverInterruptedState", () => {
     expect(f.allEvents()).toHaveLength(4);
   });
 
-  it("kitchen-sink: stuck stream + 1 orphan tool_use + 1 orphan mcp_use + 1 orphan custom_use + 1 resolved tool_use", async () => {
+  it("kitchen-sink: stuck stream + 1 orphan tool_use + 1 orphan custom_use + 1 resolved tool_use", async () => {
     await f.streams.start("msg_partial", Date.now());
     await f.streams.appendChunk("msg_partial", "partial text");
 
@@ -354,12 +295,6 @@ describe("recoverInterruptedState", () => {
       name: "read",
     } as unknown as SessionEvent);
     f.log.append({
-      type: "agent.mcp_tool_use",
-      id: "mcp_orphan",
-      name: "search",
-      server_name: "tavily",
-    } as unknown as SessionEvent);
-    f.log.append({
       type: "agent.custom_tool_use",
       id: "custom_orphan",
       name: "approve",
@@ -369,14 +304,13 @@ describe("recoverInterruptedState", () => {
 
     expect(report.finalizedStreams).toEqual(["msg_partial"]);
     expect(report.injectedToolResults).toEqual(["u_orphan"]);
-    expect(report.injectedMcpToolResults).toEqual(["mcp_orphan"]);
     expect(report.pendingCustomToolUses).toEqual(["custom_orphan"]);
-    // 1 stream-interrupted + 1 tool_call_interrupted + 1 mcp tool_call_interrupted + 1 custom_tool_call_interrupted
-    expect(report.warnings).toHaveLength(4);
+    // 1 stream-interrupted + 1 tool_call_interrupted + 1 custom_tool_call_interrupted
+    expect(report.warnings).toHaveLength(3);
 
-    // Original 5 events + agent.message (from stream) + tool_result + mcp_tool_result.
+    // Original 4 events + agent.message (from stream) + tool_result.
     // custom_tool_use does NOT inject anything.
-    expect(f.allEvents()).toHaveLength(5 + 3);
+    expect(f.allEvents()).toHaveLength(4 + 2);
 
     // Stream row is interrupted.
     const sa = await f.streams.get("msg_partial");

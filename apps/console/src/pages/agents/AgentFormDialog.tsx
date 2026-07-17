@@ -389,8 +389,6 @@ export function AgentFormDialog({
     form.modelCardId || modelCards.find((mc) => mc.model_id === form.model)?.id || "";
 
   if (!open) {
-    // Render the MCP picker anyway? No — it only makes sense while the
-    // form dialog is mounted.
     return null;
   }
 

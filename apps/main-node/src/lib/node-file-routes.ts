@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { fileR2Key, generateFileId } from "@open-managed-agents/shared";
+import { fileBlobKey, generateFileId } from "@open-managed-agents/shared";
 import { toFileRecord, type FileService } from "@open-managed-agents/files-store";
 import type { BlobStore } from "@open-managed-agents/blob-store";
 
@@ -34,7 +34,7 @@ export function buildNodeFileRoutes(deps: NodeFileRoutesDeps) {
     const file = rawFile as MultipartFile;
     const bytes = new Uint8Array(await file.arrayBuffer());
     const fileId = generateFileId();
-    const blobKey = fileR2Key(c.var.user_id, fileId);
+    const blobKey = fileBlobKey(c.var.user_id, fileId);
     const mediaType = file.type || "application/octet-stream";
     const filename = file.name || "file";
     const downloadable = form.downloadable === undefined || form.downloadable === "true";

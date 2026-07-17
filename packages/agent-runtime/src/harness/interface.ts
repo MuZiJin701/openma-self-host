@@ -130,7 +130,7 @@ export interface HarnessRuntime {
   ) => Promise<void>;
   /**
    * Live tool-input streaming. `toolUseId` matches the eventual
-   * `agent.tool_use` / `agent.mcp_tool_use` / `agent.custom_tool_use`
+   * `agent.tool_use` / `agent.custom_tool_use`
    * id. Broadcast-only — the canonical tool_use event lands once the
    * model commits the call, and recovery handles missing tool_results
    * via the existing scan (see recovery.ts).

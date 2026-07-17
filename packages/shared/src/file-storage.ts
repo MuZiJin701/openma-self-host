@@ -1,5 +1,5 @@
 /**
- * R2 key scheme for file storage.
+ * User-scoped blob key scheme for file storage.
  *
  * Single bucket (FILES_BUCKET), user isolation by key prefix.
  * Used by:
@@ -8,16 +8,16 @@
  *                                         scoped-copy in createSession resources)
  * - apps/agent/src/runtime/resource-mounter.ts (mount file_id to sandbox FS)
  */
-export function fileR2Key(userId: string, fileId: string): string {
+export function fileBlobKey(userId: string, fileId: string): string {
   return `${encodeURIComponent(userId)}/.openma/files/${encodeURIComponent(fileId)}`;
 }
 
 /**
- * R2 key for a single file inside a custom skill version.
- * One R2 object per skill file — keeps individual file size bounded and lets
+ * Blob key for a single file inside a custom skill version.
+ * One blob per skill file — keeps individual file size bounded and lets
  * us stream them into the sandbox without loading the whole bundle.
  */
-export function skillFileR2Key(
+export function skillFileBlobKey(
   userId: string,
   skillId: string,
   version: string,
@@ -27,8 +27,8 @@ export function skillFileR2Key(
 }
 
 /**
- * R2 key prefix for files the agent writes to /mnt/session/outputs/. Same
- * user-isolated layout as fileR2Key but a separate top-level namespace
+ * Blob key prefix for files the agent writes to /mnt/session/outputs/. Same
+ * user-isolated layout as fileBlobKey but a separate top-level namespace
  * so the regular /files surface and the magic-dir surface can't collide.
  *
  * Used by apps/main's session-outputs routes + cascade-delete cleanup;
@@ -40,7 +40,7 @@ export function sessionOutputsPrefix(userId: string, sessionId: string): string 
 }
 
 /** Filename → media-type guess for `/mnt/session/outputs/` listings. Used
- *  by the list endpoints when R2 / fs didn't record a contentType. */
+ *  by the list endpoints when the blob store / fs didn't record a contentType. */
 export const SESSION_OUTPUT_MIME_GUESS: Record<string, string> = {
   pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
   gif: "image/gif", webp: "image/webp", txt: "text/plain", md: "text/markdown",

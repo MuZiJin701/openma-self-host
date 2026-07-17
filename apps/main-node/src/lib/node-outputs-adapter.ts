@@ -1,8 +1,7 @@
 // Node OutputsAdapter — wraps a local outputs root (default
 // `./data/session-outputs`) as the per-session outputs surface that
 // `@open-managed-agents/http-routes`'s sessions package consumes.
-// CF wires its R2-backed equivalent in apps/main; this is the
-// Node-side companion.
+// The self-host Node process stores outputs on the local filesystem.
 
 import { createReadStream } from "node:fs";
 import { stat as fsStat, readdir as fsReaddir, rm as fsRm } from "node:fs/promises";

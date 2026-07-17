@@ -36,7 +36,6 @@ export interface Span {
 export type SpanFamily =
   | "model"
   | "tool"
-  | "mcp"
   | "custom_tool"
   | "user"
   | "agent"
@@ -54,7 +53,6 @@ export type SpanFamily =
 export const FAMILY_DOT: Record<SpanFamily, string> = {
   model: "bg-info",
   tool: "bg-success",
-  mcp: "bg-accent-violet",
   custom_tool: "bg-warning",
   user: "bg-brand",
   agent: "bg-fg-muted",
@@ -73,7 +71,6 @@ export const FAMILY_DOT: Record<SpanFamily, string> = {
 export const FAMILY_BAR: Record<SpanFamily, string> = {
   model: "bg-info/70",
   tool: "bg-success/70",
-  mcp: "bg-accent-violet/70",
   custom_tool: "bg-warning/70",
   user: "bg-brand/70",
   agent: "bg-fg-muted/70",

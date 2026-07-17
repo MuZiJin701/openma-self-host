@@ -426,45 +426,6 @@ describe("main-node crash recovery (real process, SIGKILL)", () => {
     expect(result.content).toMatch(/interrupted/i);
   });
 
-  it("crash with orphan agent.mcp_tool_use → recovery injects placeholder mcp_tool_result with is_error=true", async () => {
-    h = await startMainNode({ dataDir });
-    const dbPath = join(dataDir, "oma.db");
-    {
-      const db = new Database(dbPath);
-      const now = Date.now();
-      seedOrphanSession(db, "sess_mcp_orphan", "turn_mcp", now);
-      seedEvent(db, "sess_mcp_orphan", 1, {
-        type: "agent.mcp_tool_use",
-        id: "mcp_dangling",
-        name: "search",
-        server_name: "tavily",
-        input: { q: "anthropic" },
-      });
-      db.close();
-    }
-    await killHard(h);
-    h = null;
-
-    h = await startMainNode({ dataDir });
-
-    const db = new Database(dbPath, { readonly: true });
-    const events = db
-      .prepare(
-        `SELECT type, data FROM session_events WHERE session_id=? ORDER BY seq`,
-      )
-      .all("sess_mcp_orphan") as Array<{ type: string; data: string }>;
-    db.close();
-
-    expect(events).toHaveLength(2);
-    expect(events[1].type).toBe("agent.mcp_tool_result");
-    const result = JSON.parse(events[1].data) as {
-      mcp_tool_use_id: string;
-      is_error: boolean;
-    };
-    expect(result.mcp_tool_use_id).toBe("mcp_dangling");
-    expect(result.is_error).toBe(true);
-  });
-
   it("crash with orphan agent.custom_tool_use → row reconciled but NO event injected (user-driven)", async () => {
     // Session row should still flip to idle, but recovery must NOT
     // fabricate a user.custom_tool_result — that's user-driven (the SDK

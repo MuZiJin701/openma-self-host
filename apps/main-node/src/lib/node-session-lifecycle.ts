@@ -6,7 +6,7 @@
 //
 import {
   generateFileId,
-  fileR2Key,
+  fileBlobKey,
   logWarn,
 } from "@open-managed-agents/shared";
 import {
@@ -34,7 +34,7 @@ export function nodeSessionLifecycle(deps: NodeSessionLifecycleDeps): SessionLif
       bytes,
     }) => {
       const newFileId = generateFileId();
-      const blobKey = fileR2Key(userId, newFileId);
+      const blobKey = fileBlobKey(userId, newFileId);
       await deps.filesBlob.put(blobKey, bytes, {
         httpMetadata: { contentType: mediaType },
       });

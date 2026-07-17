@@ -41,7 +41,6 @@ export function deriveSpans(events: Event[]): { spans: Span[]; totalMs: number }
   // stores both timestamp (for span math) and the source Event (for
   // click-to-expand JSON inspection).
   const toolResults = new Map<string, { t: number; e: Event }>();
-  const mcpResults = new Map<string, { t: number; e: Event }>();
   const customResults = new Map<string, { t: number; e: Event }>();
   // model_request_start_id → end's timestamp + usage. Anthropic's wire
   // format pairs the per-call span pair this way (rather than positional
@@ -64,7 +63,6 @@ export function deriveSpans(events: Event[]): { spans: Span[]; totalMs: number }
   const childByParent = new Map<string, { t: number; e: Event }>();
   for (const { e, t } of timed) {
     if (e.type === "agent.tool_result" && e.tool_use_id) toolResults.set(e.tool_use_id, { t, e });
-    else if (e.type === "agent.mcp_tool_result" && e.mcp_tool_use_id) mcpResults.set(e.mcp_tool_use_id, { t, e });
     else if (e.type === "user.custom_tool_result" && (e as Event).id) customResults.set(String(e.id), { t, e });
     else if (e.type === "span.model_request_end") {
       const data = (e.data as { model_request_start_id?: string; model_usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }; finish_reason?: string } | undefined);
@@ -130,21 +128,8 @@ export function deriveSpans(events: Event[]): { spans: Span[]; totalMs: number }
         startMs,
         durationMs: Math.max(0, endMs - startMs),
       });
-    } else if (e.type === "agent.mcp_tool_use") {
-      const result = mcpResults.get(String(e.id));
-      const endMs = result ? result.t - t0 : startMs;
-      if (result) sourceEvents.push(result.e);
-      pushSpan({
-        key: `mcp-${e.id ?? i}`,
-        family: "mcp",
-        label: `${String(e.mcp_server_name ?? "mcp")}:${String(e.name ?? "?")}`,
-        detail: result ? "completed" : "no result",
-        startMs,
-        durationMs: Math.max(0, endMs - startMs),
-      });
     } else if (
       e.type === "agent.tool_result" ||
-      e.type === "agent.mcp_tool_result" ||
       e.type === "user.custom_tool_result"
     ) {
       // consumed via pairing above — no row

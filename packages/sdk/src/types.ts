@@ -119,14 +119,6 @@ export interface AgentToolUseEvent extends EventBase {
   input: Record<string, unknown>;
 }
 
-export interface AgentMcpToolUseEvent extends EventBase {
-  type: "agent.mcp_tool_use";
-  id: string;
-  mcp_server_name: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
 export interface AgentCustomToolUseEvent extends EventBase {
   type: "agent.custom_tool_use";
   id: string;
@@ -155,13 +147,6 @@ export interface AgentToolUseInputStreamEndEvent extends EventBase {
 export interface AgentToolResultEvent extends EventBase {
   type: "agent.tool_result";
   tool_use_id: string;
-  content: string | ContentBlock[];
-  is_error?: boolean;
-}
-
-export interface AgentMcpToolResultEvent extends EventBase {
-  type: "agent.mcp_tool_result";
-  mcp_tool_use_id: string;
   content: string | ContentBlock[];
   is_error?: boolean;
 }
@@ -229,13 +214,11 @@ export type SessionEvent =
   | AgentThinkingChunkEvent
   | AgentThinkingStreamEndEvent
   | AgentToolUseEvent
-  | AgentMcpToolUseEvent
   | AgentCustomToolUseEvent
   | AgentToolUseInputStreamStartEvent
   | AgentToolUseInputChunkEvent
   | AgentToolUseInputStreamEndEvent
   | AgentToolResultEvent
-  | AgentMcpToolResultEvent
   | SessionStatusRunningEvent
   | SessionStatusIdleEvent
   | SessionErrorEvent

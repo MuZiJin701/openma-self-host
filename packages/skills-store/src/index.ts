@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BlobStore } from "@open-managed-agents/blob-store";
-import { skillFileR2Key } from "@open-managed-agents/shared";
+import { skillFileBlobKey } from "@open-managed-agents/shared";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 
 export interface SkillFileInput {
@@ -172,7 +172,7 @@ export class SqlSkillService implements SkillService {
       validateFilename(file.filename);
       const contentType = file.contentType ?? "text/plain";
       const bytes = typeof file.content === "string" ? new TextEncoder().encode(file.content) : file.content;
-      const key = skillFileR2Key(input.userId, input.skillId, next, file.filename);
+      const key = skillFileBlobKey(input.userId, input.skillId, next, file.filename);
       await this.blobs.put(key, bytes, { httpMetadata: { contentType } });
       metadata.push({ file, key, size: bytes.byteLength, contentType });
     }

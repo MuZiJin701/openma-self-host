@@ -5,7 +5,7 @@
 // Phase B-harness scope: text-only completion. The stub SandboxExecutor
 // throws on every method, which is fine if the agent's tool config doesn't
 // register sandbox-dependent tools (bash, read, write, edit, glob, grep).
-// Phase C-sandbox swaps the stub for E2B / docker / whatever.
+// A future sandbox implementation can replace the stub behind this port.
 
 import type { ModelMessage } from "ai";
 import type {

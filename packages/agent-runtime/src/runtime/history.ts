@@ -7,8 +7,6 @@ import type {
   AgentThinkingEvent,
   AgentToolUseEvent,
   AgentToolResultEvent,
-  AgentMcpToolUseEvent,
-  AgentMcpToolResultEvent,
   AgentCustomToolUseEvent,
   AgentThreadContextCompactedEvent,
   ContentBlock,
@@ -74,13 +72,10 @@ export function eventsToMessages(events: SessionEvent[]): ModelMessage[] {
   for (const event of events) {
     if (
       event.type === "agent.tool_use" ||
-      event.type === "agent.mcp_tool_use" ||
       event.type === "agent.custom_tool_use"
     ) {
-      const e = event as AgentToolUseEvent | AgentMcpToolUseEvent | AgentCustomToolUseEvent;
-      const name = event.type === "agent.mcp_tool_use"
-        ? `mcp_${(e as AgentMcpToolUseEvent).mcp_server_name}_call`
-        : (e as AgentToolUseEvent | AgentCustomToolUseEvent).name;
+      const e = event as AgentToolUseEvent | AgentCustomToolUseEvent;
+      const name = e.name;
       toolNameById.set(e.id, name);
     }
   }
@@ -170,13 +165,10 @@ export async function eventsToMessagesAsync(
   for (const event of events) {
     if (
       event.type === "agent.tool_use" ||
-      event.type === "agent.mcp_tool_use" ||
       event.type === "agent.custom_tool_use"
     ) {
-      const e = event as AgentToolUseEvent | AgentMcpToolUseEvent | AgentCustomToolUseEvent;
-      const name = event.type === "agent.mcp_tool_use"
-        ? `mcp_${(e as AgentMcpToolUseEvent).mcp_server_name}_call`
-        : (e as AgentToolUseEvent | AgentCustomToolUseEvent).name;
+      const e = event as AgentToolUseEvent | AgentCustomToolUseEvent;
+      const name = e.name;
       toolNameById.set(e.id, name);
     }
   }
@@ -312,13 +304,10 @@ function buildMessages(
         break;
       }
       case "agent.tool_use":
-      case "agent.mcp_tool_use":
       case "agent.custom_tool_use": {
         flushTools();
-        const e = event as AgentToolUseEvent | AgentMcpToolUseEvent | AgentCustomToolUseEvent;
-        const toolName = event.type === "agent.mcp_tool_use"
-          ? `mcp_${(e as AgentMcpToolUseEvent).mcp_server_name}_call`
-          : (e as AgentToolUseEvent | AgentCustomToolUseEvent).name;
+        const e = event as AgentToolUseEvent | AgentCustomToolUseEvent;
+        const toolName = e.name;
         pendingAssistantContent.push({
           type: "tool-call",
           toolCallId: e.id,
@@ -328,12 +317,10 @@ function buildMessages(
         break;
       }
       case "agent.tool_result":
-      case "agent.mcp_tool_result": {
+      {
         flushAssistant();
-        const e = event as AgentToolResultEvent | AgentMcpToolResultEvent;
-        const toolCallId = event.type === "agent.tool_result"
-          ? (e as AgentToolResultEvent).tool_use_id
-          : (e as AgentMcpToolResultEvent).mcp_tool_use_id;
+        const e = event as AgentToolResultEvent;
+        const toolCallId = e.tool_use_id;
         const toolName = toolNameById.get(toolCallId) ?? "unknown";
         const output = wireContentToToolOutput((e as AgentToolResultEvent).content);
         pendingToolContent.push({
@@ -420,13 +407,10 @@ async function buildMessagesAsync(
         break;
       }
       case "agent.tool_use":
-      case "agent.mcp_tool_use":
       case "agent.custom_tool_use": {
         flushTools();
-        const e = event as AgentToolUseEvent | AgentMcpToolUseEvent | AgentCustomToolUseEvent;
-        const toolName = event.type === "agent.mcp_tool_use"
-          ? `mcp_${(e as AgentMcpToolUseEvent).mcp_server_name}_call`
-          : (e as AgentToolUseEvent | AgentCustomToolUseEvent).name;
+        const e = event as AgentToolUseEvent | AgentCustomToolUseEvent;
+        const toolName = e.name;
         pendingAssistantContent.push({
           type: "tool-call",
           toolCallId: e.id,
@@ -436,12 +420,10 @@ async function buildMessagesAsync(
         break;
       }
       case "agent.tool_result":
-      case "agent.mcp_tool_result": {
+      {
         flushAssistant();
-        const e = event as AgentToolResultEvent | AgentMcpToolResultEvent;
-        const toolCallId = event.type === "agent.tool_result"
-          ? (e as AgentToolResultEvent).tool_use_id
-          : (e as AgentMcpToolResultEvent).mcp_tool_use_id;
+        const e = event as AgentToolResultEvent;
+        const toolCallId = e.tool_use_id;
         const toolName = toolNameById.get(toolCallId) ?? "unknown";
         const output = wireContentToToolOutput((e as AgentToolResultEvent).content);
         pendingToolContent.push({

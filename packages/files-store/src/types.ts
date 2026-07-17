@@ -2,15 +2,15 @@
 // apps/main/migrations/0011_files_table.sql.
 //
 // Design choices:
-//   - FileRow holds metadata only — the R2 blob lives in FILES_BUCKET under
-//     `r2_key`. Service is intentionally R2-blind: routes own R2 PUT/GET/DELETE.
+//   - FileRow holds metadata only — the blob store owns the bytes under
+//     `r2_key`. Service is intentionally storage-blind: routes own blob PUT/GET/DELETE.
 //   - `scope` is a denormalized enum ("session" | "user") that mirrors the
 //     session_id NULL/non-NULL state. Kept explicit so a future "agent_scope"
 //     or "user_scope" extension fits without a schema migration.
 //   - `r2_key` is stored explicitly (instead of recomputed from
-//     fileR2Key(user, id) every time) so the delete cascade can return the
-//     R2 keys without needing a user-aware helper. Also future-proofs against
-//     R2 key scheme changes (e.g. random suffixes for security).
+//     fileBlobKey(user, id) every time) so the delete cascade can return the
+//     blob keys without needing a user-aware helper. The column name is kept
+//     for schema compatibility.
 //   - `downloadable` is a boolean stored as INTEGER (SQLite has no BOOL).
 //     Adapter does the 0/1 ↔ false/true conversion.
 
@@ -29,7 +29,7 @@ export interface FileRow {
   size_bytes: number;
   /** Whether the file content can be served back via GET /v1/files/:id/content. */
   downloadable: boolean;
-  /** R2 object key. Stored so cascade-delete can return it without recomputing. */
+  /** Blob key. Stored so cascade-delete can return it without recomputing. */
   r2_key: string;
   created_at: string;
 }

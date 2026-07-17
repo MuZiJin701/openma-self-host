@@ -70,7 +70,7 @@ export function SessionDetail() {
    *  as messages — drained on matching agent.thinking. */
   const [thinkingStreams, setThinkingStreams] = useState<Map<string, string>>(new Map());
   /** In-flight tool-input streams keyed by tool_use_id. Wiped when the
-   *  canonical agent.tool_use / mcp_tool_use / custom_tool_use lands
+   *  canonical agent.tool_use / custom_tool_use lands
    *  with the same id (toolCallId on the AI SDK side). The accumulated
    *  string is partial JSON — render as a code block, not Markdown. */
   const [toolInputStreams, setToolInputStreams] = useState<Map<string, { name?: string; partial: string }>>(new Map());
@@ -255,11 +255,10 @@ export function SessionDetail() {
       });
     }
 
-    // Canonical tool_use of any kind (built-in, MCP, custom) → drop
+    // Canonical tool_use of any kind (built-in or custom) → drop
     // in-flight tool input. The canonical id field equals the AI SDK
     // toolCallId we used as tool_use_id.
     if ((ev.type === "agent.tool_use"
-      || ev.type === "agent.mcp_tool_use"
       || ev.type === "agent.custom_tool_use") && ev.id) {
       const tid = ev.id;
       setToolInputStreams((prev) => {
@@ -804,12 +803,11 @@ export function SessionDetail() {
                   const tid = (e as { session_thread_id?: string }).session_thread_id ?? "sthr_primary";
                   return tid === activeThreadId;
                 });
-                // Pre-pair tool_use ↔ result events. Three flavors per the
+                // Pre-pair tool_use ↔ result events. Two flavors per the
                 // wire spec emitted in default-loop.ts:emitToolCallEvent /
                 // emitToolResultEvent:
                 //   • builtin tools  → agent.tool_use         + agent.tool_result        (key: tool_use_id)
                 //   • custom tools   → agent.custom_tool_use  + agent.tool_result        (key: tool_use_id) ← same result type
-                //   • MCP tools      → agent.mcp_tool_use     + agent.mcp_tool_result    (key: mcp_tool_use_id)
                 // The previous pairing only covered builtin → custom tools
                 // A tool result without a visible matching call is shown as an "unpaired"
                 // orphan block because the use side was custom_tool_use.
@@ -830,9 +828,6 @@ export function SessionDetail() {
                 for (const ev of filtered) {
                   if (ev.type === "agent.tool_result") {
                     const id = (ev as { tool_use_id?: string }).tool_use_id;
-                    if (id) resultByToolUseId.set(id, ev);
-                  } else if (ev.type === "agent.mcp_tool_result") {
-                    const id = (ev as { mcp_tool_use_id?: string }).mcp_tool_use_id;
                     if (id) resultByToolUseId.set(id, ev);
                   } else if (ev.type === "span.model_request_end") {
                     const d = (ev as { data?: { finish_reason?: string; error_message?: string; model?: string }; finish_reason?: string; error_message?: string; model?: string });
@@ -867,15 +862,10 @@ export function SessionDetail() {
                     ?? (e as { seq?: number }).seq
                     ?? `idx-${e.type}-${i}`;
                   // Tool-result that's been folded into its use card —
-                  // skip standalone render. Both wire shapes: agent.tool_result
-                  // (covers builtin + custom) keys on tool_use_id;
-                  // agent.mcp_tool_result keys on mcp_tool_use_id.
+                  // skip standalone render. Both built-in and custom tool
+                  // calls use agent.tool_result keyed on tool_use_id.
                   if (e.type === "agent.tool_result") {
                     const tuid = (e as { tool_use_id?: string }).tool_use_id;
-                    if (tuid && pairedResultIds.has(tuid)) return null;
-                  }
-                  if (e.type === "agent.mcp_tool_result") {
-                    const tuid = (e as { mcp_tool_use_id?: string }).mcp_tool_use_id;
                     if (tuid && pairedResultIds.has(tuid)) return null;
                   }
                   // Tool-use of any flavor: pair with its result if present,
@@ -886,7 +876,6 @@ export function SessionDetail() {
                   if (
                     e.type === "agent.tool_use"
                     || e.type === "agent.custom_tool_use"
-                    || e.type === "agent.mcp_tool_use"
                   ) {
                     const tuid = (e as { id?: string }).id;
                     if (tuid && resultByToolUseId.has(tuid)) {
@@ -1256,7 +1245,7 @@ function RelativeTimeBadge({ iso }: { iso: string }) {
  *   user.message              → <Message from="user|system">  (system for wakeups)
  *   agent.message             → <Message from="assistant"> + <Markdown>
  *   agent.thinking            → <Reasoning> + <ReasoningContent>
- *   agent.{tool_use,custom_tool_use,mcp_tool_use} → <Tool> + <ToolHeader> + <ToolInput> + <ToolOutput>
+ *   agent.{tool_use,custom_tool_use} → <Tool> + <ToolHeader> + <ToolInput> + <ToolOutput>
  *   agent.tool_result (orphan only, paired ones folded into use above)
  *                             → <Tool state="output-available"> with only ToolOutput
  *   session.error             → red alert div  (no ai-elements equivalent)
@@ -1307,8 +1296,8 @@ function EventRender({
    */
   livePending?: boolean;
   /**
-   * The matching `agent.tool_result` (or `agent.mcp_tool_result`) for
-   * an `agent.tool_use` (or `custom_tool_use` / `mcp_tool_use`) event,
+   * The matching `agent.tool_result` for an `agent.tool_use` or
+   * `agent.custom_tool_use` event,
    * when present in the same filtered list. Caller pre-pairs by id and
    * suppresses the orphan tool_result render. Lets the Tool card show
    * input + output in one collapsible block instead of two disconnected
@@ -1438,16 +1427,10 @@ function EventRender({
 
     case "agent.tool_use":
     case "agent.custom_tool_use":
-    case "agent.mcp_tool_use": {
-      // All three use-types share the same shape (id + name + input);
-      // MCP additionally carries mcp_server_name which we append to
-      // the title so operators can tell built-in vs MCP at a glance.
-      const mcpServerName =
-        event.type === "agent.mcp_tool_use"
-          ? (event as { mcp_server_name?: string }).mcp_server_name
-          : undefined;
+    {
+      // Built-in and custom tool calls share the same shape.
       const baseName = event.name ?? "tool";
-      const title = mcpServerName ? `${baseName} (mcp · ${mcpServerName})` : baseName;
+      const title = baseName;
       // Result text — Tool's <ToolOutput> takes the raw value and will
       // either CodeBlock-stringify an object or render a string in a
       // CodeBlock. We pre-stringify content arrays since they're an
@@ -1461,7 +1444,7 @@ function EventRender({
           ? rawContent
           : JSON.stringify(rawContent, null, 2);
       // is_error is set by the agent runtime when a tool call failed
-      // (bash non-zero exit + stderr surfaced, mcp tool returned an
+      // (bash non-zero exit + stderr surfaced,
       // error envelope, _finalizeStaleTurns injected an abort placeholder
       // for DO-eviction recovery, etc.). When present we route the same
       // payload through ToolOutput.errorText so the Tool block renders
@@ -1493,7 +1476,7 @@ function EventRender({
     }
 
     case "agent.tool_result":
-    case "agent.mcp_tool_result": {
+    {
       // Orphan tool_result — caller couldn't pair it with a tool_use
       // (race / out-of-order delivery, or recovery-injected placeholder).
       // Render a degenerate Tool with output-only so the visual is still

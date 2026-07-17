@@ -14,7 +14,7 @@ export interface PendingToolAction {
   toolUseId: string;
   toolName: string;
   input: Record<string, unknown>;
-  resultType: "agent.tool_result" | "agent.mcp_tool_result";
+  resultType: "agent.tool_result";
 }
 
 function pendingToolActionFromUse(
@@ -22,7 +22,6 @@ function pendingToolActionFromUse(
 ): PendingToolAction | null {
   if (
     use.type !== "agent.tool_use" &&
-    use.type !== "agent.mcp_tool_use" &&
     use.type !== "agent.custom_tool_use"
   ) {
     return null;
@@ -34,18 +33,12 @@ function pendingToolActionFromUse(
     toolUseId: use.id,
     toolName: use.name,
     input: use.input,
-    resultType: use.type === "agent.mcp_tool_use"
-      ? "agent.mcp_tool_result"
-      : "agent.tool_result",
+    resultType: "agent.tool_result",
   };
 }
 
 function hasToolResult(events: SessionEvent[], pending: PendingToolAction): boolean {
   return events.some((event) => {
-    if (pending.resultType === "agent.mcp_tool_result") {
-      return event.type === "agent.mcp_tool_result" &&
-        event.mcp_tool_use_id === pending.toolUseId;
-    }
     return event.type === "agent.tool_result" &&
       event.tool_use_id === pending.toolUseId;
   });
@@ -93,7 +86,7 @@ export function findPendingToolAction(
         event.id === actionId;
     }
     return (
-      (event.type === "agent.tool_use" || event.type === "agent.mcp_tool_use") &&
+      event.type === "agent.tool_use" &&
       event.id === actionId
     );
   });

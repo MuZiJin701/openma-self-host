@@ -16,10 +16,10 @@
 //      chunks the previous runtime had buffered (or a placeholder) and
 //      finalize the streams row to "interrupted".
 //
-//   2. `agent.tool_use` (built-in or MCP) without a matching result
+//   2. `agent.tool_use` without a matching result
 //      event. Anthropic strictly requires every tool use be followed
 //      by a result; without one the next LLM call 400s. We inject a
-//      placeholder `agent.tool_result` / `agent.mcp_tool_result` so the
+//      placeholder `agent.tool_result` so the
 //      bijection is intact when eventsToMessages projects the next turn.
 //
 // `agent.custom_tool_use` orphans are NOT auto-resolved — the
@@ -44,8 +44,6 @@ export interface RecoveryReport {
   finalizedStreams: string[];
   /** Tool-use ids that received an injected placeholder tool_result. */
   injectedToolResults: string[];
-  /** Tool-use ids that received an injected placeholder mcp_tool_result. */
-  injectedMcpToolResults: string[];
   /** Custom-tool-use ids surfaced as warning-only (no result injected). */
   pendingCustomToolUses: string[];
   /** Warnings to broadcast to live subscribers. */
@@ -59,7 +57,6 @@ export async function recoverInterruptedState(
   const report: RecoveryReport = {
     finalizedStreams: [],
     injectedToolResults: [],
-    injectedMcpToolResults: [],
     pendingCustomToolUses: [],
     warnings: [],
   };
@@ -88,27 +85,23 @@ export async function recoverInterruptedState(
   const all = history.getEvents();
   const useTypes = new Map<
     string,
-    { type: "agent.tool_use" | "agent.mcp_tool_use" | "agent.custom_tool_use"; name?: string }
+    { type: "agent.tool_use" | "agent.custom_tool_use"; name?: string }
   >();
   const resolved = new Set<string>();
   for (const e of all) {
-    const ev = e as { type: string; id?: string; name?: string; tool_use_id?: string; mcp_tool_use_id?: string };
+    const ev = e as { type: string; id?: string; name?: string; tool_use_id?: string };
     switch (ev.type) {
       case "agent.tool_use":
-      case "agent.mcp_tool_use":
       case "agent.custom_tool_use":
         if (ev.id) {
           useTypes.set(ev.id, {
-            type: ev.type as "agent.tool_use" | "agent.mcp_tool_use" | "agent.custom_tool_use",
+            type: ev.type as "agent.tool_use" | "agent.custom_tool_use",
             name: ev.name,
           });
         }
         break;
       case "agent.tool_result":
         if (ev.tool_use_id) resolved.add(ev.tool_use_id);
-        break;
-      case "agent.mcp_tool_result":
-        if (ev.mcp_tool_use_id) resolved.add(ev.mcp_tool_use_id);
         break;
       case "user.custom_tool_result":
         if (ev.id) resolved.add(ev.id);
@@ -126,14 +119,6 @@ export async function recoverInterruptedState(
         content: placeholder,
       } as SessionEvent);
       report.injectedToolResults.push(useId);
-    } else if (info.type === "agent.mcp_tool_use") {
-      history.append({
-        type: "agent.mcp_tool_result",
-        mcp_tool_use_id: useId,
-        content: placeholder,
-        is_error: true,
-      } as SessionEvent);
-      report.injectedMcpToolResults.push(useId);
     } else {
       report.pendingCustomToolUses.push(useId);
       report.warnings.push({

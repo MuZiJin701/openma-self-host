@@ -117,7 +117,7 @@ export function FilesList() {
   };
 
   const remove = async (f: FileRecord) => {
-    if (!confirm(`Delete "${f.filename}"? The R2 object and metadata both go. This cannot be undone.`)) return;
+    if (!confirm(`Delete "${f.filename}"? The blob and metadata both go. This cannot be undone.`)) return;
     try {
       await api(`/v1/files/${f.id}`, { method: "DELETE" });
       // Invalidate every /v1/files query (any scope filter) so the page

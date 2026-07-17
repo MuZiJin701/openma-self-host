@@ -14,35 +14,15 @@ import { ALL_TOOLS } from "./tools";
 // `cancel_schedule`, and `list_schedules` to mis-emit as
 // `agent.custom_tool_use` instead of `agent.tool_use`.
 const BUILTIN_TOOLS = new Set(ALL_TOOLS);
-const isMcpTool = (name: string) => name.startsWith("mcp_");
 // Exported so tests can assert classification directly. Returning true here
 // makes `runtime.broadcast` emit `agent.tool_use`; false routes to
-// `agent.custom_tool_use`. Down-stream consumers (Console UI, SDK event
-// filters, billing dashboards) split on those event types.
+// `agent.custom_tool_use`.
 export const isBuiltinTool = (name: string): boolean =>
-  BUILTIN_TOOLS.has(name) || isMcpTool(name) || name.startsWith("call_agent_");
-
-
-/**
- * Extract the MCP server name from a tool name like "mcp_github_call" or "mcp_github_list_tools".
- */
-function extractMcpServerName(toolName: string): string {
-  // mcp_{server_name}_{call|list_tools}
-  const withoutPrefix = toolName.slice(4); // Remove "mcp_"
-  const lastUnderscore = withoutPrefix.lastIndexOf("_");
-  // Handle _list_tools (two underscores)
-  if (withoutPrefix.endsWith("_list_tools")) {
-    return withoutPrefix.slice(0, withoutPrefix.length - "_list_tools".length);
-  }
-  if (lastUnderscore > 0) {
-    return withoutPrefix.slice(0, lastUnderscore);
-  }
-  return withoutPrefix;
-}
+  BUILTIN_TOOLS.has(name) || name.startsWith("call_agent_");
 
 /**
  * Map a tool-call ContentPart to the right wire event family
- * (mcp / built-in / custom). Also emits agent.thread_message_sent for
+ * (built-in / custom). Also emits agent.thread_message_sent for
  * call_agent_* sub-agent invocations.
  *
  * Lives outside DefaultHarness so the bijection contract is co-located
@@ -72,15 +52,7 @@ function emitToolCallEvent(
     });
   }
 
-  if (isMcpTool(toolName)) {
-    runtime.broadcast({
-      type: "agent.mcp_tool_use",
-      id: toolCallId,
-      mcp_server_name: extractMcpServerName(toolName),
-      name: toolName,
-      input: callInput,
-    });
-  } else if (isBuiltinTool(toolName)) {
+  if (isBuiltinTool(toolName)) {
     const event: AgentToolUseEvent = {
       type: "agent.tool_use",
       id: toolCallId,
@@ -142,28 +114,16 @@ function emitToolResultEvent(
 
   const content = normalizeToolOutputForWire(raw);
 
-  if (isMcpTool(toolName)) {
-    runtime.broadcast({
-      type: "agent.mcp_tool_result",
-      mcp_tool_use_id: toolCallId,
-      content: typeof content === "string" ? content : JSON.stringify(content),
-      // v1-additive: causal predecessor is the matching agent.mcp_tool_use,
-      // whose EventBase.id is set explicitly to toolCallId in
-      // emitToolCallEvent above. Same identity, no extra plumbing.
-      parent_event_id: toolCallId,
-    });
-  } else {
-    runtime.broadcast({
-      type: "agent.tool_result",
-      tool_use_id: toolCallId,
-      content,
-      // v1-additive: causal predecessor is the matching agent.tool_use,
-      // whose EventBase.id is set explicitly to toolCallId in
-      // emitToolCallEvent above. (AgentToolUseEvent.id overrides
-      // EventBase.id, so tool_use_id IS the parent's EventBase.id.)
-      parent_event_id: toolCallId,
-    });
-  }
+  runtime.broadcast({
+    type: "agent.tool_result",
+    tool_use_id: toolCallId,
+    content,
+    // v1-additive: causal predecessor is the matching agent.tool_use,
+    // whose EventBase.id is set explicitly to toolCallId in
+    // emitToolCallEvent above. (AgentToolUseEvent.id overrides
+    // EventBase.id, so tool_use_id IS the parent's EventBase.id.)
+    parent_event_id: toolCallId,
+  });
 
   if (toolName.startsWith("call_agent_")) {
     const text = typeof content === "string"

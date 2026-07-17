@@ -211,15 +211,11 @@ export class SessionsResource {
           break;
         }
         case "agent.tool_use":
-        case "agent.mcp_tool_use":
         case "agent.custom_tool_use":
           result.toolCalls.push({ id: ev.id, name: ev.name, input: ev.input });
           break;
         case "agent.tool_result":
           result.toolResults.push({ tool_use_id: ev.tool_use_id, content: ev.content, is_error: ev.is_error });
-          break;
-        case "agent.mcp_tool_result":
-          result.toolResults.push({ tool_use_id: ev.mcp_tool_use_id, content: ev.content, is_error: ev.is_error });
           break;
       }
     }

@@ -66,8 +66,7 @@ export interface SessionRegistryDeps {
    *  newEventLog(sid) — keeps the stamp closure local to the shell. */
   newEventLog(sessionId: string): SqlEventLog;
 
-  /** Build the per-session sandbox. The shell knows how to assemble a
-   *  LocalSubprocess / E2B / Daytona / etc., the machine doesn't. */
+  /** Build the per-session local sandbox. The machine only consumes this port. */
   buildSandbox(sessionId: string, userId: string, workdir: string): Promise<SandboxExecutor>;
 
   /** Build the LanguageModel for the agent. Reads env, applies custom
@@ -491,20 +490,13 @@ export class SessionRegistry {
       }
     }
 
-    const resultEvent = pending.resultType === "agent.mcp_tool_result"
-      ? {
-          type: "agent.mcp_tool_result" as const,
-          mcp_tool_use_id: pending.toolUseId,
-          content: serializeToolResult(content),
-          parent_event_id: pending.toolUseId,
-          ...(isError ? { is_error: true } : {}),
-        }
-      : {
-          type: "agent.tool_result" as const,
-          tool_use_id: pending.toolUseId,
-          content,
-          parent_event_id: pending.toolUseId,
-        };
+    const resultEvent = {
+      type: "agent.tool_result" as const,
+      tool_use_id: pending.toolUseId,
+      content,
+      parent_event_id: pending.toolUseId,
+      ...(isError ? { is_error: true } : {}),
+    };
     await appendAndPublish(sessionId, eventLog, this.deps.hub, resultEvent as SessionEvent);
   }
 
