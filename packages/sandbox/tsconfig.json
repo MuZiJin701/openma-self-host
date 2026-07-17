@@ -9,10 +9,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "src/adapters/daytona.ts",
-    "src/adapters/litebox.ts",
-    "src/adapters/boxrun.ts",
-    "src/adapters/e2b.ts",
-    "src/adapters/cf.ts"
+    "src/adapters/local-subprocess.ts"
   ]
 }

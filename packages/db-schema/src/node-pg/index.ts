@@ -1,9 +1,5 @@
-// Node-PG schema — union of cf-auth + cf-router with
-// PG-typed columns (BIGINT timestamps, TIMESTAMPTZ for better-auth,
-// BOOLEAN for boolean flags, etc.).
-//
-// On Node self-host every table lives in one PG database. The schema
-// is the union of what CF splits across 3 D1 bindings.
+// Node-PG self-host schema with PG-typed columns (BIGINT timestamps,
+// TIMESTAMPTZ for Better Auth, BOOLEAN for boolean flags, etc.).
 //
 // drizzle-kit consumes this barrel via drizzle.node-pg.config.ts and
 // emits migrations into apps/main-node/migrations/.

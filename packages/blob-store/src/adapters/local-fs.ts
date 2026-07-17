@@ -1,5 +1,5 @@
 // Local filesystem BlobStore — files-store / workspace-backups blob target
-// for single-node deployments. Same shape as CfR2BlobStore + S3BlobStore.
+// for single-node deployments.
 //
 // Layout: <baseDir>/<key> with parent dirs auto-created. Sidecar
 // `.meta.json` carries httpMetadata + customMetadata so GET round-trips.

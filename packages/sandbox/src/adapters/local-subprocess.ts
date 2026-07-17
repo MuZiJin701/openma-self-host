@@ -6,19 +6,16 @@
 // (so the harness's existing /workspace/foo conventions still land
 // somewhere — we transparently rewrite /workspace → workdir).
 //
-// /mnt/memory and /mnt/session/outputs: when running inside the
-// `openma/main-node` container, we create real symlinks at those root
-// paths pointing into the workdir's `.mnt/...` tree. Bash that does
-// `cat /mnt/memory/foo` then resolves the same dir as harness tools.
+// /mnt/session/outputs: when running inside the `openma/main-node`
+// container, we create a symlink at that root path pointing into the
+// workdir's `.mnt/...` tree.
 // Outside a container the host's `/mnt` is usually not writable as the
 // `node` user — we fall back to the workdir-relative `.mnt/...` path
-// rewriter so dev workflows still work; bash hardcoding `/mnt/memory/...`
-// will see ENOENT in that mode (documented in self-host.md).
+// rewriter so dev workflows still work.
 //
 // SECURITY: this adapter has zero process isolation. An agent that runs
 // `rm -rf /` will hit the host. ONLY use for trusted local development.
-// Production / untrusted agents must use E2B / Daytona / LiteBox / BoxRun
-// or CloudflareSandbox.
+// This adapter is for trusted local execution only.
 
 import {
   spawn,
@@ -26,7 +23,6 @@ import {
 } from "node:child_process";
 import { promises as fs } from "node:fs";
 import {
-  chmodSync,
   mkdirSync,
   rmSync,
   statSync,
@@ -53,15 +49,6 @@ export interface LocalSubprocessSandboxOptions {
   /** Logger for debug/warn output. Defaults to console. */
   logger?: { warn: (msg: string, ctx?: unknown) => void; log: (msg: string) => void };
   /**
-   * Absolute path to the directory backing memory blob content. Required
-   * to support mountMemoryStore — when set, mountMemoryStore symlinks
-   * <workdir>/.mnt/memory/<storeName> → <memoryRoot>/<storeId>/, so reads
-   * and writes flow directly to the BlobStore's on-disk layout. When omitted,
-   * mountMemoryStore is a hard error (matches CF behaviour without
-   * MEMORY_BUCKET).
-   */
-  memoryRoot?: string;
-  /**
    * Absolute path to the directory backing per-session output deliveries
    * (the `/mnt/session/outputs/` magic dir). Required to support
    * mountSessionOutputs — when set, mountSessionOutputs symlinks
@@ -71,16 +58,6 @@ export interface LocalSubprocessSandboxOptions {
    * behaviour without FILES_BUCKET).
    */
   outputsRoot?: string;
-}
-
-interface MemoryMount {
-  storeName: string;
-  storeId: string;
-  readOnly: boolean;
-  /** Real path the symlink targets — `<memoryRoot>/<storeId>/`. */
-  targetDir: string;
-  /** Workdir-relative mount path — `.mnt/memory/<storeName>`. */
-  mountRel: string;
 }
 
 interface OutputsMount {
@@ -98,11 +75,8 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
   private sharedWorkspace: boolean;
   private defaultTimeoutMs: number;
   private envVars: Record<string, string> = {};
-  private commandSecrets: Array<{ prefix: string; secrets: Record<string, string> }> = [];
   private processes = new Map<string, BackgroundProcess>();
-  private mounts = new Map<string, MemoryMount>();
   private outputsMount: OutputsMount | null = null;
-  private memoryRoot: string | null;
   private outputsRoot: string | null;
   private logger: NonNullable<LocalSubprocessSandboxOptions["logger"]>;
   private readOnlyPaths = new Set<string>();
@@ -115,7 +89,6 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
       ? join(this.workdir, ".oma-sessions", mountSession)
       : this.workdir;
     this.defaultTimeoutMs = opts.defaultTimeoutMs ?? 120_000;
-    this.memoryRoot = opts.memoryRoot ? resolve(opts.memoryRoot) : null;
     this.outputsRoot = opts.outputsRoot ? resolve(opts.outputsRoot) : null;
     this.logger = opts.logger ?? {
       warn: (msg, ctx) => moduleLogger.warn({ ...(ctx as Record<string, unknown> ?? {}) }, msg),
@@ -131,7 +104,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
 
   async execWithSignal(command: string, timeout?: number, signal?: AbortSignal): Promise<string> {
     const timeoutMs = timeout ?? this.defaultTimeoutMs;
-    const env = this.buildEnv(command);
+    const env = this.buildEnv();
     const shell = process.platform === "win32"
       ? (process.env.ComSpec ?? "cmd.exe")
       : "/bin/sh";
@@ -219,7 +192,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
   }
 
   async startProcess(command: string): Promise<ProcessHandle | null> {
-    const env = this.buildEnv(command);
+    const env = this.buildEnv();
     const shell = process.platform === "win32"
       ? (process.env.ComSpec ?? "cmd.exe")
       : "/bin/sh";
@@ -242,137 +215,6 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
 
   async setEnvVars(envVars: Record<string, string>): Promise<void> {
     this.envVars = { ...this.envVars, ...envVars };
-  }
-
-  registerCommandSecrets(commandPrefix: string, secrets: Record<string, string>): void {
-    this.commandSecrets.push({ prefix: commandPrefix, secrets });
-  }
-
-  async setOutboundContext(_opts?: { userId: string; sessionId: string }): Promise<void> {
-    // Wire outbound credential injection through the oma-vault sidecar
-    // (apps/oma-vault). The sidecar runs a mockttp HTTPS MITM proxy with a
-    // self-signed CA; we point the subprocess at it via standard
-    // HTTP(S)_PROXY env vars + tell node/curl/python to trust the local CA.
-    //
-    // Both env vars are read from the host process — they're set in
-    // docker-compose.yml (or the operator's env) and shared between
-    // main-node and the sandbox subprocess. If either is missing the agent
-    // just talks to upstreams directly with no credential injection — same
-    // as the CF path with no oma-vault binding.
-    const proxyUrl = process.env.OMA_VAULT_PROXY_URL;
-    const caCertPath = process.env.OMA_VAULT_CA_CERT;
-    if (!proxyUrl || !caCertPath) return;
-
-    const env: Record<string, string> = {
-      HTTP_PROXY: proxyUrl,
-      HTTPS_PROXY: proxyUrl,
-      http_proxy: proxyUrl,
-      https_proxy: proxyUrl,
-      // Node TLS: trust the vault CA in addition to system roots.
-      NODE_EXTRA_CA_CERTS: caCertPath,
-      // curl & python's `requests` (when REQUESTS_CA_BUNDLE not set).
-      SSL_CERT_FILE: caCertPath,
-      // Some tools look for this name specifically.
-      CURL_CA_BUNDLE: caCertPath,
-    };
-    await this.setEnvVars(env);
-  }
-
-  /**
-   * Bind a memory store into the sandbox at /mnt/memory/<storeName>.
-   *
-   * Two-tier mount strategy:
-   *   1. Always: workdir-relative `.mnt/memory/<storeName>` symlink to
-   *      `<memoryRoot>/<storeId>/`. The path resolver rewrites
-   *      `/mnt/memory/<storeName>/...` → `.mnt/memory/<storeName>/...` so
-   *      harness read/write/edit/glob/grep tools land directly on the
-   *      BlobStore's on-disk layout — no copy, no sync-back.
-   *   2. Best-effort: a real symlink at the root `/mnt/memory/<storeName>`
-   *      → the workdir target. Created only when `/mnt/memory` is
-   *      writable to this process (typical inside the
-   *      `openma/main-node` container running as the `node` user).
-   *      Bash that hard-codes `/mnt/memory/foo` then sees the same dir
-   *      as the harness. Outside a container the root path usually isn't
-   *      writable — bash that hard-codes `/mnt/memory/...` will hit
-   *      ENOENT and the workdir-relative + `$OMA_MEMORY_DIR` paths
-   *      remain the supported access pattern.
-   *
-   * read_only enforcement: chmod -w on the target dir's contents at
-   * mount time (best effort — root-equivalent in container can still
-   * write; documented in openma-self-host-operations.md). The harness write tool also
-   * checks `assertWritable` for a clearer error.
-   */
-  async mountMemoryStore(opts: {
-    storeName: string;
-    storeId: string;
-    readOnly: boolean;
-  }): Promise<void> {
-    if (!this.memoryRoot) {
-      throw new Error(
-        `LocalSubprocessSandbox.mountMemoryStore: memoryRoot not configured — ` +
-        `pass it to the constructor or skip memory mounts`,
-      );
-    }
-    const targetDir = join(this.memoryRoot, opts.storeId);
-    mkdirSync(targetDir, { recursive: true });
-
-    const mountParent = join(this.mountRoot, ".mnt", "memory");
-    mkdirSync(mountParent, { recursive: true });
-
-    const workdirSymlink = join(mountParent, opts.storeName);
-    try {
-      rmSync(workdirSymlink, { recursive: true, force: true });
-    } catch { /* best-effort */ }
-    try {
-      symlinkSync(targetDir, workdirSymlink, "dir");
-    } catch (err) {
-      throw new Error(
-        `mountMemoryStore: symlink ${workdirSymlink} → ${targetDir} failed: ` +
-        (err as Error).message,
-      );
-    }
-
-    // Best-effort: real /mnt/memory/<storeName> root symlink — works inside
-    // the docker image; silently no-ops on a host that hasn't pre-created
-    // a writable /mnt/memory.
-    const rootSymlink = `/mnt/memory/${opts.storeName}`;
-    if (!this.sharedWorkspace && this.tryEnsureRootMountDir("/mnt/memory")) {
-      try {
-        rmSync(rootSymlink, { recursive: true, force: true });
-      } catch { /* best-effort */ }
-      try {
-        symlinkSync(targetDir, rootSymlink, "dir");
-      } catch (err) {
-        this.logger.warn(
-          `root symlink /mnt/memory/${opts.storeName} skipped: ${(err as Error).message}`,
-        );
-      }
-    }
-
-    if (opts.readOnly) {
-      // Best-effort chmod -w. Bash root-equivalent inside the container
-      // can still chmod +w, but normal agent processes get a clear
-      // EACCES on writes — matches the harness assertWritable error
-      // shape.
-      try {
-        chmodSync(targetDir, 0o555);
-      } catch { /* best-effort */ }
-    }
-
-    this.mounts.set(opts.storeName, {
-      storeName: opts.storeName,
-      storeId: opts.storeId,
-      readOnly: opts.readOnly,
-      targetDir,
-      mountRel: join(".mnt", "memory", opts.storeName),
-    });
-
-    // Expose to bash via env. Setting per-store too in case the agent
-    // wants the absolute path without parsing.
-    await this.setEnvVars({
-      OMA_MEMORY_DIR: mountParent,
-      [`OMA_MEMORY_${opts.storeName.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`]: workdirSymlink,
-    });
   }
 
   async mountSessionOutputs(opts: {
@@ -488,22 +330,12 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
    * mount; we transparently rewrite /workspace → workdir so existing tools
    * keep working without changes.
    *
-   * /mnt/memory and /mnt/session/outputs paths: when the root symlinks
-   * exist on disk (container case) they resolve naturally as absolute
-   * paths; when they don't, we fall back to the workdir-relative
-   * `.mnt/...` mirror so harness tools still land on the right files.
+   * /mnt/session/outputs paths use the root symlink when available and
+   * otherwise fall back to the workdir-relative `.mnt/...` mirror.
    */
   private resolvePath(p: string): string {
     let normalised = p;
-    // Memory mount: /mnt/memory/<storeName>/<rest> → <workdir>/.mnt/memory/...
-    if (normalised.startsWith("/mnt/memory/") || normalised === "/mnt/memory") {
-      // When the real /mnt/memory symlink exists, prefer it — bash and
-      // tools see the same path.
-      if (!this.sharedWorkspace && this.rootMountExists("/mnt/memory")) return normalised;
-      normalised = normalised === "/mnt/memory"
-        ? ".mnt/memory"
-        : ".mnt/memory/" + normalised.slice("/mnt/memory/".length);
-    } else if (
+    if (
       normalised.startsWith("/mnt/session/outputs/") ||
       normalised === "/mnt/session/outputs"
     ) {
@@ -557,23 +389,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     }
   }
 
-  /**
-   * Throw if `p` resolves into a read-only memory mount and `mode` is "write".
-   * Read/write tools call this so the agent gets a clear error rather than a
-   * silent successful write that gets blown away on the next mount.
-   */
   private assertWritable(p: string): void {
-    if (p.startsWith("/mnt/memory/")) {
-      const rest = p.slice("/mnt/memory/".length);
-      const slash = rest.indexOf("/");
-      const storeName = slash === -1 ? rest : rest.slice(0, slash);
-      const mount = this.mounts.get(storeName);
-      if (mount?.readOnly) {
-        throw new Error(
-          `EACCES: memory store ${storeName} mounted read-only at /mnt/memory/${storeName}/`,
-        );
-      }
-    }
     const full = this.resolvePath(p);
     for (const root of this.readOnlyPaths) {
       if (full === root || full.startsWith(`${root}/`)) {
@@ -594,15 +410,12 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     }
   }
 
-  private buildEnv(command: string): NodeJS.ProcessEnv {
+  private buildEnv(): NodeJS.ProcessEnv {
     const base: Record<string, string> = {
       ...process.env as Record<string, string>,
       ...this.envVars,
       PWD: this.workdir,
     };
-    for (const { prefix, secrets } of this.commandSecrets) {
-      if (command.startsWith(prefix)) Object.assign(base, secrets);
-    }
     return base;
   }
 }

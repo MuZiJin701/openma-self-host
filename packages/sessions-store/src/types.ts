@@ -31,8 +31,6 @@ export interface SessionRow {
   environment_id: string | null;
   title: string;
   status: SessionStatus;
-  /** Vault IDs attached to the session — used by SessionDO for outbound credential lookup. */
-  vault_ids: string[] | null;
   /** Frozen agent definition at session-create time. Null only for tests / legacy paths. */
   agent_snapshot: AgentConfig | null;
   /** Frozen environment definition at session-create time. */
@@ -58,6 +56,3 @@ export interface SessionResourceRow {
 
 /** Hard cap, mirrored from sessions.ts:869. Per-session resource ceiling. */
 export const MAX_RESOURCES_PER_SESSION = 100;
-
-/** Hard cap, mirrored from sessions.ts:188 + sessions.ts:893. Anthropic-aligned. */
-export const MAX_MEMORY_STORE_RESOURCES_PER_SESSION = 8;

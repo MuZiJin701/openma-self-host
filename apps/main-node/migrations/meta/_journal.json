@@ -8,6 +8,13 @@
       "when": 1784277131423,
       "tag": "0000_keen_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784282962228,
+      "tag": "0001_bent_luke_cage",
+      "breakpoints": true
     }
   ]
 }

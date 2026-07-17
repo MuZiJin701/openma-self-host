@@ -5,11 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./logger/cf": "./src/logger/cf.ts",
     "./logger/node": "./src/logger/node.ts",
-    "./metrics/cf": "./src/metrics/cf.ts",
     "./metrics/node": "./src/metrics/node.ts",
-    "./tracer/cf": "./src/tracer/cf.ts",
     "./tracer/node": "./src/tracer/node.ts",
     "./middleware": "./src/middleware.ts"
   },

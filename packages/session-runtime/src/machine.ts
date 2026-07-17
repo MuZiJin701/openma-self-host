@@ -67,11 +67,6 @@ export interface SessionMachineDeps {
    *  store; Node reads from agentsService. */
   loadAgent(agentId: string): Promise<AgentConfig | null>;
 
-  /** Bind a memory store into the sandbox. Phase 2 keeps the loop in
-   *  the shell to avoid pulling memory-store types into this package;
-   *  the shell calls sandbox.mountMemoryStore directly via sandbox. */
-  mountMemoryStores?(opts: { sandbox: SandboxExecutor }): Promise<void>;
-
   /** Mount /mnt/session/outputs/ into the sandbox. Per-session bound
    *  directory the agent uses to deliver final artefacts; the same path
    *  is exposed by the main worker via GET /v1/sessions/:id/outputs.
@@ -157,13 +152,6 @@ export class SessionStateMachine {
 
     let ctx: unknown;
     try {
-      // Memory store mounts: optional adapter step, runs once per turn
-      // so a session newly bound to a store picks it up on the next
-      // user.message without restarting.
-      if (this.deps.mountMemoryStores) {
-        await this.deps.mountMemoryStores({ sandbox: this.deps.sandbox });
-      }
-
       // /mnt/session/outputs/ mount. Idempotent on the supported adapters
       // (LocalSubprocess re-symlinks, CF re-mounts the R2 prefix), so
       // re-running per turn is safe and means the path is always present

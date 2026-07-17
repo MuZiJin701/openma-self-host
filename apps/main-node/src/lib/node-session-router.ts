@@ -454,22 +454,4 @@ export class NodeSessionRouter implements SessionRouter {
     };
   }
 
-  async getLlmCallBody(
-    _userId: string,
-    _sessionId: string,
-    _eventId: string,
-  ): Promise<
-    | { status: number; body: BodyInit; contentType: string; contentLength?: number }
-    | { status: 404 | 500 | 501; body: string; contentType: "application/json" }
-  > {
-    // LLM-body persistence requires a blob store (R2 on CF). Single-host
-    // Node has no equivalent today; return 501 with a clear remediation.
-    return {
-      status: 501,
-      body: JSON.stringify({
-        error: "LLM call body persistence is CF-only (requires FILES_BUCKET R2 binding)",
-      }),
-      contentType: "application/json",
-    };
-  }
 }

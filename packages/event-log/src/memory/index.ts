@@ -1,7 +1,4 @@
-// In-memory adapters — for unit tests and the in-memory thread history
-// case (sub-agent runs that don't need persistence). Faster than the CF
-// SQLite adapter in tests because there's no SQL round-trip; same shape
-// so consumer code is identical.
+// In-memory adapters for unit tests and short-lived thread history.
 
 import type { SessionEvent } from "@open-managed-agents/shared";
 import type {
@@ -30,8 +27,7 @@ export class InMemoryEventLog implements EventLogRepo {
   constructor(private stamp: (e: SessionEvent) => void) {}
 
   /**
-   * Append a SessionEvent to the in-memory log. Mirrors the cf-do
-   * adapter: this is a primitive "write a row" operation. Queue-input
+   * Append a SessionEvent to the in-memory log. Queue-input
    * events (user.message / user.tool_confirmation /
    * user.custom_tool_result) are NOT auto-routed to a queue here —
    * sub-agent and test code that uses InMemoryHistory needs the user
@@ -39,7 +35,7 @@ export class InMemoryEventLog implements EventLogRepo {
    * since sub-agents run synchronously without a drain step.
    *
    * SessionDO routes its primary-thread queue-input events through
-   * `InMemoryPendingQueue.enqueue` (or `CfDoPendingQueue.enqueue`)
+   * `InMemoryPendingQueue.enqueue`
    * separately. The two paths are now independent.
    */
   append(event: SessionEvent): void {

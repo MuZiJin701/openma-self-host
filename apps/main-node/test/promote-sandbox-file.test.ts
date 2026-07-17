@@ -138,9 +138,7 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
 
     // 3. Create a session. Body shape mirrors apps/main:
     //    { agent: <id>, environment?: <id> } — environment defaults to
-    //    `env_local_runtime` when an agent has a runtime_binding (Node has
-    //    no cloud env_id concept yet, so loadEnvironment is unset and the
-    //    request falls through with environment=null).
+    //    the built-in local Environment.
     const sRes = await fetch(`${base}/sessions`, {
       method: "POST",
       headers: { "content-type": "application/json" },

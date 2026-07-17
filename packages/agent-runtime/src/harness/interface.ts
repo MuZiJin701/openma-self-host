@@ -204,7 +204,7 @@ export interface HarnessContext {
   /**
    * Platform-resolved reminders the default `onSessionInit` will inject as
    * `<system-reminder>` user.message events on first session run. Sources:
-   * skill metadata, memory_store prompts, opted-in appendable_prompts.
+   * skill metadata and opted-in appendable_prompts.
    *
    * Custom harnesses can ignore this and inject differently — or skip
    * platform reminders entirely by overriding onSessionInit with a no-op.
@@ -233,26 +233,9 @@ export interface HarnessContext {
     ANTHROPIC_MODEL?: string;
     TAVILY_API_KEY?: string;
     delegateToAgent?: (agentId: string, message: string) => Promise<string>;
-    CONFIG_KV?: KVNamespace;
-    memoryStoreIds?: string[];
     environmentConfig?: { networking?: { type: string; allowed_hosts?: string[] } };
     /** Register a background task for completion notification (CC-style task_notification). */
     watchBackgroundTask?: (taskId: string, pid: string, outputFile: string, proc: ProcessHandle | null) => void;
-    /** Cross-script DO binding to RuntimeRoom (declared on main worker but
-     *  bound here via wrangler.jsonc `script_name`). AcpProxyHarness uses
-     *  this to attach to the daemon's room without going through main as
-     *  an HTTP service. */
-    RUNTIME_ROOM?: DurableObjectNamespace;
-    /** LLM full-body logging context. When set, the harness wraps each
-     *  model call in middleware that PUTs request + response to R2 keyed
-     *  by the per-step span event id. SessionDO populates this with the
-     *  session's user + id and the FILES_BUCKET binding. Absent in
-     *  test harnesses / non-CF deploys → middleware no-op. */
-    llmLog?: {
-      user_id: string;
-      session_id: string;
-      r2: R2Bucket | null;
-    };
   };
   runtime: HarnessRuntime;
 }

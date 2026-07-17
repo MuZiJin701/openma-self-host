@@ -109,12 +109,10 @@ describe("self-host resource routes", () => {
           get: async () => ({
             id: "agent-1",
             user_id: "user-a",
-            runtime_binding: null,
           }),
         },
       } as never,
       router: {} as never,
-      forceLocalRuntime: true,
       localRuntimeEnvId: "env-local-runtime",
       loadEnvironment: async ({ environmentId }) => environmentId === "env-cloud"
         ? {
@@ -143,7 +141,6 @@ describe("self-host resource routes", () => {
           get: async () => ({
             id: "agent-1",
             user_id: "user-a",
-            runtime_binding: null,
           }),
         },
         sessions: {
@@ -163,7 +160,6 @@ describe("self-host resource routes", () => {
         },
       } as never,
       router: { init: async () => undefined } as never,
-      forceLocalRuntime: true,
       loadEnvironment: async ({ environmentId }) => ({
         type: "environment",
         id: environmentId,

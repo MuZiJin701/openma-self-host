@@ -7,19 +7,11 @@ export const generateId = () => nanoid();
 export const generateAgentId = () => `agent-${nanoid()}`;
 export const generateEnvId = () => `env-${nanoid()}`;
 export const generateSessionId = () => `sess-${nanoid()}`;
-export const generateVaultId = () => `vlt-${nanoid()}`;
-export const generateCredentialId = () => `cred-${nanoid()}`;
-export const generateMemoryStoreId = () => `memstore-${nanoid()}`;
-export const generateMemoryId = () => `mem-${nanoid()}`;
-export const generateMemoryVersionId = () => `memver-${nanoid()}`;
 export const generateFileId = () => `file-${nanoid()}`;
 export const generateResourceId = () => `sesrsc-${nanoid()}`;
 export const generateEventId = () => `sevt-${nanoid()}`;
 export const generateModelCardId = () => `mdl-${nanoid()}`;
-export const generateEvalRunId = () => `evrun-${nanoid()}`;
-export const generateDreamId = () => `drm-${nanoid()}`;
 // Outcome id — Anthropic Managed Agents spec uses an `outc_` prefix on every
-// `user.define_outcome` echo so subsequent `span.outcome_evaluation_*`
 // events can name which outcome they pertain to (sessions can chain
 // outcomes sequentially; same session, different outcome ids).
 export const generateOutcomeId = () => `outc_${nanoid()}`;

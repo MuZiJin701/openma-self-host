@@ -22,7 +22,6 @@
 
 import type {
   ContentBlock,
-  CredentialConfig,
   SessionEvent,
   SessionRecord,
   StoredEvent,
@@ -35,10 +34,8 @@ export interface SessionInitParams {
   environmentId: string;
   title: string;
   userId: string;
-  vaultIds?: string[];
   agentSnapshot?: AgentConfig;
   environmentSnapshot?: EnvironmentConfig;
-  vaultCredentials?: Array<{ vault_id: string; credentials: CredentialConfig[] }>;
   initEvents?: SessionEvent[];
 }
 
@@ -58,20 +55,6 @@ export interface SessionEventsPage {
 export interface SessionFullStatus {
   status: string;
   usage: { input_tokens: number; output_tokens: number };
-  outcome_evaluations?: Array<{
-    outcome_id?: string;
-    result: string;
-    iteration: number;
-    explanation?: string;
-    feedback?: string;
-    usage?: {
-      input_tokens: number;
-      output_tokens: number;
-      cache_creation_input_tokens?: number;
-      cache_read_input_tokens?: number;
-    };
-    processed_at?: string;
-  }>;
   resources?: unknown[];
 }
 
@@ -164,7 +147,7 @@ export interface SessionRouter {
     body: { command: string; timeout_ms?: number },
   ): Promise<SessionExecResult>;
 
-  /** Read the live full-status (usage, outcome_evaluations, resources)
+  /** Read the live full-status (usage and resources)
    *  for GET /v1/sessions/:id overlay. Returns null when the runtime is
    *  unreachable; route falls back to the stored row. */
   getFullStatus(sessionId: string): Promise<SessionFullStatus | null>;
@@ -214,17 +197,6 @@ export interface SessionRouter {
     opts?: { rawSearch?: string },
   ): Promise<{ status: number; body: string }>;
 
-  // ── LLM call body ─────────────────────────────────────────────────────
-  /** GET /v1/sessions/:id/llm-calls/:event_id — fetch the persisted full
-   *  LLM request/response body for a single span.model_request_end event.
-   *  CF reads from R2 (FILES_BUCKET) at
-   *  `t/{userId}/sessions/{sessionId}/llm/{eventId}.json`; runtimes
-   *  without that storage (Node single-host) return 501. */
-  getLlmCallBody(
-    userId: string,
-    sessionId: string,
-    eventId: string,
-  ): Promise<{ status: number; body: BodyInit; contentType: string; contentLength?: number } | { status: 404 | 500 | 501; body: string; contentType: "application/json" }>;
 }
 
 /** Thin helper: converts a base64-encoded ContentBlock (image / document)

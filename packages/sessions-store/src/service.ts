@@ -11,7 +11,6 @@ import type {
 } from "@open-managed-agents/shared";
 import {
   SessionArchivedError,
-  SessionMemoryStoreMaxExceededError,
   SessionNotFoundError,
   SessionResourceMaxExceededError,
   SessionResourceNotFoundError,
@@ -26,7 +25,6 @@ import type {
   SessionUpdateFields,
 } from "./ports";
 import {
-  MAX_MEMORY_STORE_RESOURCES_PER_SESSION,
   MAX_RESOURCES_PER_SESSION,
   SessionResourceRow,
   SessionRow,
@@ -49,7 +47,6 @@ export type NewResourceInput = Omit<SessionResource, "id" | "session_id" | "crea
  *
  * Owns:
  *   - per-session resource quota (MAX_RESOURCES_PER_SESSION) — was sessions.ts:869
- *   - per-session memory_store quota (MAX_MEMORY_STORE_RESOURCES_PER_SESSION) — was sessions.ts:188 + 893
  *   - archived-session immutability for new resources (sessions.ts:541 was for events;
  *     we apply the same block to resource adds for consistency)
  *   - cascade delete on session.delete (sessions, resources)
@@ -89,7 +86,7 @@ export class SessionService {
    * inserted in the same D1 batch as the session row, replacing the KV-era
    * partial-failure window where a session existed but its resources didn't.
    *
-   * Pre-validates per-session caps so a 21st memory_store at create time fails
+   * Pre-validates the per-session resource cap before writing.
    * before the batch fires.
    */
   async create(opts: {
@@ -98,7 +95,6 @@ export class SessionService {
     environmentId: string;
     title?: string;
     status?: SessionStatus;
-    vaultIds?: string[];
     agentSnapshot?: AgentConfig;
     environmentSnapshot?: EnvironmentConfig;
     metadata?: Record<string, unknown>;
@@ -108,11 +104,6 @@ export class SessionService {
     if (resources.length > MAX_RESOURCES_PER_SESSION) {
       throw new SessionResourceMaxExceededError(MAX_RESOURCES_PER_SESSION);
     }
-    const memoryStoreCount = resources.filter((r) => r.type === "memory_store").length;
-    if (memoryStoreCount > MAX_MEMORY_STORE_RESOURCES_PER_SESSION) {
-      throw new SessionMemoryStoreMaxExceededError(MAX_MEMORY_STORE_RESOURCES_PER_SESSION);
-    }
-
     const sessionId = this.ids.sessionId();
     const createdAt = this.clock.nowMs();
 
@@ -141,7 +132,6 @@ export class SessionService {
         environmentId: opts.environmentId,
         title: opts.title ?? "",
         status: opts.status ?? "idle",
-        vaultIds: opts.vaultIds ?? null,
         agentSnapshot: opts.agentSnapshot ?? null,
         environmentSnapshot: opts.environmentSnapshot ?? null,
         metadata: opts.metadata ?? null,
@@ -318,7 +308,7 @@ export class SessionService {
 
   /**
    * Add a resource to an existing session. Enforces the per-session count cap
-   * (100) and the memory_store sub-cap (8). Refuses on archived sessions
+   * (100). Refuses on archived sessions
    * (consistency with the events route's archived-session block).
    */
   async addResource(opts: {
@@ -332,12 +322,6 @@ export class SessionService {
     const total = await this.repo.countResources(opts.sessionId);
     if (total >= MAX_RESOURCES_PER_SESSION) {
       throw new SessionResourceMaxExceededError(MAX_RESOURCES_PER_SESSION);
-    }
-    if (opts.resource.type === "memory_store") {
-      const memCount = await this.repo.countResourcesByType(opts.sessionId, "memory_store");
-      if (memCount >= MAX_MEMORY_STORE_RESOURCES_PER_SESSION) {
-        throw new SessionMemoryStoreMaxExceededError(MAX_MEMORY_STORE_RESOURCES_PER_SESSION);
-      }
     }
     const resourceId = this.ids.resourceId();
     const createdAt = this.clock.nowMs();
@@ -419,7 +403,6 @@ export class SessionService {
     return this.repo.updateResource(opts.sessionId, opts.resourceId, stamped);
   }
 
-  /** Indexed COUNT for sessions.ts:853 quota check (called before a memory_store add). */
   async countActiveResources(opts: {
     sessionId: string;
   }): Promise<number> {

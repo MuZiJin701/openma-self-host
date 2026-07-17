@@ -22,14 +22,6 @@ export class SessionResourceMaxExceededError extends Error {
   }
 }
 
-/** Per-session memory_store count exceeded MAX_MEMORY_STORE_RESOURCES_PER_SESSION. */
-export class SessionMemoryStoreMaxExceededError extends Error {
-  readonly code = "session_memory_store_max_exceeded";
-  constructor(public readonly limit: number) {
-    super(`Maximum ${limit} memory_store resources per session`);
-  }
-}
-
 /** Mutation attempted against an archived session (sessions.ts:541). */
 export class SessionArchivedError extends Error {
   readonly code = "session_archived";

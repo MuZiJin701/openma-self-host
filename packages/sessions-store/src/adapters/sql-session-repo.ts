@@ -57,7 +57,6 @@ export class SqlSessionRepo implements SessionRepo {
       environment_id: session.environmentId,
       title: session.title,
       status: session.status,
-      vault_ids: session.vaultIds !== null ? JSON.stringify(session.vaultIds) : null,
       agent_snapshot:
         session.agentSnapshot !== null ? JSON.stringify(session.agentSnapshot) : null,
       environment_snapshot:
@@ -338,24 +337,6 @@ export class SqlSessionRepo implements SessionRepo {
     return row?.c ?? 0;
   }
 
-  async countResourcesByType(
-    sessionId: string,
-    type: SessionResource["type"],
-  ): Promise<number> {
-    const row = await getOne<{ c: number }>(
-      this.db
-        .select({ c: sql<number>`COUNT(*)` })
-        .from(session_resources)
-        .where(
-          and(
-            eq(session_resources.session_id, sessionId),
-            eq(session_resources.type, type),
-          ),
-        ),
-    );
-    return row?.c ?? 0;
-  }
-
   async deleteResource(sessionId: string, resourceId: string): Promise<void> {
     await runOnce(
       this.db
@@ -417,7 +398,6 @@ function toSessionRow(r: typeof sessions.$inferSelect): SessionRow {
     environment_id: r.environment_id,
     title: r.title,
     status: r.status as SessionStatus,
-    vault_ids: r.vault_ids !== null ? (JSON.parse(r.vault_ids) as string[]) : null,
     agent_snapshot:
       r.agent_snapshot !== null ? (JSON.parse(r.agent_snapshot) as AgentConfig) : null,
     environment_snapshot:

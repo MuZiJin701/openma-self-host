@@ -28,12 +28,6 @@ export interface SandboxExecutor {
   /** Set global environment variables for all subsequent exec calls. */
   setEnvVars?(envVars: Record<string, string>): Promise<void>;
   /**
-   * Bind the outbound handler with this session's identifying context.
-   * On CF the handler intercepts container HTTPS requests and RPCs into
-   * the main worker for vault credential injection. On other backends it's
-   * a no-op or implementation-specific.
-   */
-  /**
    * Hand the (user, env, session) tuple to the OmaSandbox container DO so
    * its onActivityExpired hook (sleepAfter teardown) records the final
    * /workspace snapshot scoped to this session.
@@ -61,11 +55,6 @@ export interface SandboxExecutor {
    * the string-based writeFile would corrupt them via UTF-8 round-tripping.
    */
   writeFileBytes?(path: string, bytes: Uint8Array): Promise<string>;
-  /**
-   * Mount a memory store into the sandbox at /mnt/memory/<storeName>/.
-   * On CF backed by R2 + FUSE; on Node we hydrate by copying. Read-only
-   * mounts reject writes.
-   */
   /**
    * Mount FILES_BUCKET at /mnt/session/outputs/ scoped to (userId, sessionId)
    * via R2 prefix. Anything the agent writes here appears in real time via
@@ -115,10 +104,7 @@ export interface SandboxExecutor {
 // register name in the map" — host code doesn't grow.
 //
 // Each factory reads its own env vars off the SandboxFactoryEnv arg
-// (just `process.env` repackaged for testability). All factories see
-// the same shared `ctx` (sessionId, per-session workdir, memory root)
-// so adapters that don't need them just ignore them — the host never
-// branches on which subset to pass.
+// (just `process.env` repackaged for testability).
 
 export interface SandboxFactoryContext {
   /** Per-session id — adapters use it for naming, scoping, etc. */
@@ -127,9 +113,6 @@ export interface SandboxFactoryContext {
   workdir: string;
   /** Whether the workdir is shared by multiple session sandboxes. */
   sharedWorkspace?: boolean;
-  /** Memory blob root on the host. Adapters that mount memory stores
-   *  via symlink (LocalSubprocess) read from this; remote adapters
-   *  (Daytona/E2B) typically use s3fs and ignore it. */
   /** Session-outputs root on the host. LocalSubprocess symlinks
    *  per-(user, session) dirs under here when mountSessionOutputs
    *  is called; remote adapters that don't host-mount can ignore it. */
@@ -145,15 +128,3 @@ export type SandboxFactory = (
   ctx: SandboxFactoryContext,
   env: SandboxFactoryEnv,
 ) => Promise<SandboxExecutor>;
-
-// ─── Shared adapter helpers ─────────────────────────────────────────
-//
-// Lives here (not in any specific adapter file) so adapters can share
-// without cross-importing each other — cross-imports drag Node-only
-// modules into the CF Worker type-check graph (which excludes the
-// individual adapter files).
-
-/** Pluck S3-compatible memory-bucket config out of process env. Returns
- *  undefined when any required key is missing — adapters interpret that
- *  as "no remote memory mount available". Both Daytona and E2B share
- *  this shape (s3fs config). */

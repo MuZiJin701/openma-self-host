@@ -76,25 +76,6 @@ export interface AgentConfig {
    */
   aux_model?: string | { id: string; speed?: "standard" | "fast" };
   harness?: string;
-  /**
-   * When set, agent runs on a user-registered local ACP runtime instead of
-   * OMA's cloud SessionDO loop. `harness` MUST be "acp-proxy" for this to
-   * take effect; SessionDO routes the AcpProxyHarness which proxies via the
-   * RuntimeRoom DO addressed by `runtime_id` to the daemon, which spawns the
-   * ACP child identified by `acp_agent_id` (matching KNOWN_ACP_AGENTS).
-   */
-  runtime_binding?: {
-    runtime_id: string;
-    acp_agent_id: string;
-    /**
-     * Skill ids the user wants HIDDEN from this agent's ACP child. Default
-     * (omitted / empty) = all locally-detected skills allowed. Each id matches
-     * a skill the daemon reported in the runtime hello manifest's
-     * `local_skills[acp_agent_id]`. Daemon enforces by NOT symlinking the
-     * blocked dir into spawn cwd's CLAUDE_CONFIG_DIR.
-     */
-    local_skill_blocklist?: string[];
-  };
   description?: string;
   metadata?: Record<string, unknown>;
   /**
@@ -173,7 +154,6 @@ export interface SessionMeta {
   title: string;
   status: SessionStatus;
   metadata?: Record<string, unknown>;
-  vault_ids?: string[];
   archived_at?: string;
   updated_at?: string;
   created_at: string;
@@ -429,67 +409,6 @@ export interface AgentMcpToolResultEvent extends EventBase {
   is_error?: boolean;
 }
 
-export interface UserDefineOutcomeEvent extends EventBase {
-  type: "user.define_outcome";
-  /**
-   * Server-minted on ingest, prefix `outc_`. Echoed back on the persisted
-   * event so downstream `span.outcome_evaluation_*` events can name which
-   * outcome they pertain to. AMA-spec compatible.
-   */
-  outcome_id?: string;
-  description: string;
-  /**
-   * Rubric for the LLM-judge path. AMA accepts either inline text or a
-   * pointer to an uploaded file.
-   *
-   * Back-compat: a bare string is treated as `{ type: "text", content }` —
-   * old clients that pre-date this schema bump keep working.
-   *
-   * Mutually exclusive with `verifier`; at least one of the two is required.
-   */
-  rubric?: string | RubricSpec;
-  /**
-   * OMA superset over AMA: a deterministic / scriptable check. When set,
-   * takes precedence over `rubric`. Wire shape mirrors @oma/eval-core
-   * `RewardSpec` (script / verifiable / composite / reward_model). Typed
-   * structurally here so api-types stays a leaf package.
-   */
-  verifier?: OutcomeVerifierSpec;
-  max_iterations?: number; // default 3, max 20
-}
-
-/**
- * AMA outcome rubric union. The `file` variant resolves the rubric content
- * from the OMA Files API at outcome trigger time; the resolved text is
- * cached in session state so re-iteration doesn't re-fetch.
- */
-export type RubricSpec =
-  | { type: "text"; content: string }
-  | { type: "file"; file_id: string };
-
-/**
- * Wire shape of @oma/eval-core RewardSpec, restated here so api-types
- * stays a leaf (eval-core depends on api-types). Validation + dispatch
- * lives in eval-core; this type just keeps `user.define_outcome` typed
- * end-to-end.
- */
-export interface OutcomeVerifierSpec {
-  type: "script" | "verifiable" | "composite" | "reward_model";
-  [key: string]: unknown;
-}
-
-/**
- * @deprecated Legacy spelling — emit `span.outcome_evaluation_end` instead.
- * Kept as a type alias so old persisted events parse. New emit sites use
- * `SpanOutcomeEvaluationEndEvent`.
- */
-export interface OutcomeEvaluationEvent extends EventBase {
-  type: "outcome.evaluation_end";
-  result: "satisfied" | "needs_revision" | "max_iterations_reached" | "failed";
-  iteration: number;
-  feedback?: string;
-}
-
 export interface SessionErrorEvent extends EventBase {
   type: "session.error";
   error: string | {
@@ -579,17 +498,6 @@ export interface SessionRescheduledEvent extends EventBase {
   reason?: string;
 }
 
-export interface SessionOutcomeEvaluatedEvent extends EventBase {
-  type: "session.outcome_evaluated";
-  outcome_id?: string;
-  result: "satisfied" | "needs_revision" | "max_iterations_reached" | "failed" | "interrupted";
-  iteration: number;
-  feedback?: string;
-  explanation?: string;
-  usage?: { input_tokens: number; output_tokens: number };
-  outcome_evaluation_start_id?: string;
-}
-
 export interface SessionThreadIdleEvent extends EventBase {
   type: "session.thread_idle";
   session_thread_id: string;
@@ -643,25 +551,6 @@ export interface SpanModelRequestEndEvent extends EventBase {
   is_error?: boolean;
   /** Error message when is_error=true. Truncated to 500 chars. */
   error_message?: string;
-  /** R2 key under FILES_BUCKET pointing to the persisted full
-   *  request/response body for this provider call. Computable from
-   *  session_id + this event's `id` at read time
-   *  (`t/{tenant}/sessions/{sid}/llm/{event_id}.json`); surfaced here
-   *  so consumers don't have to know the layout. Absent when the
-   *  per-tenant or per-env LLM logging flag (LLM_LOGS_DISABLED=1) is
-   *  off. Read via GET /v1/sessions/:id/llm-calls/:event_id. */
-  body_r2_key?: string;
-}
-
-export interface SpanOutcomeEvaluationStartEvent extends EventBase {
-  type: "span.outcome_evaluation_start";
-  /** AMA-spec: which outcome this iteration belongs to. Optional for
-   *  back-compat — pre-Phase-4 events lack it. */
-  outcome_id?: string;
-  /** 0-indexed revision counter. AMA: `0` = first evaluation, `1` = first
-   *  re-evaluation after revision, etc. Pre-Phase-4 emitters used 1-indexed;
-   *  consumers should treat both as monotonic counters when comparing. */
-  iteration: number;
 }
 
 // Compaction summarize call — distinct span type so dashboards can attribute
@@ -683,61 +572,6 @@ export interface SpanCompactionSummarizeEndEvent extends EventBase {
   };
   finish_reason?: string;
   final_text_length?: number;
-}
-
-export interface SpanOutcomeEvaluationOngoingEvent extends EventBase {
-  type: "span.outcome_evaluation_ongoing";
-  /** AMA-spec: which outcome this heartbeat belongs to. Optional for
-   *  back-compat. */
-  outcome_id?: string;
-  /** 0-indexed iteration this heartbeat belongs to. Optional — heartbeats
-   *  may fire before the start span has the iteration cemented. */
-  iteration?: number;
-}
-
-export interface SpanOutcomeEvaluationEndEvent extends EventBase {
-  type: "span.outcome_evaluation_end";
-  /** AMA-spec: matches the parent `span.outcome_evaluation_start.id`.
-   *  Optional for back-compat. */
-  outcome_evaluation_start_id?: string;
-  /** AMA-spec: which outcome this verdict belongs to. Optional for
-   *  back-compat. */
-  outcome_id?: string;
-  /**
-   * Verdict enum, AMA-aligned (5 values):
-   *   - `satisfied` — rubric met, session transitions to idle
-   *   - `needs_revision` — agent gets the explanation back, starts a new
-   *     iteration cycle
-   *   - `max_iterations_reached` — terminal, no further evaluation cycles
-   *   - `failed` — verifier threw / returned malformed score / rubric
-   *     fundamentally doesn't match the task
-   *   - `interrupted` — `user.interrupt` arrived mid-evaluation; only
-   *     emitted if the matching `span.outcome_evaluation_start` had already
-   *     fired
-   */
-  result:
-    | "satisfied"
-    | "needs_revision"
-    | "max_iterations_reached"
-    | "failed"
-    | "interrupted";
-  /** 0-indexed iteration this verdict applies to. */
-  iteration: number;
-  /** Human-readable rationale for the verdict. AMA names this
-   *  `explanation`; pre-Phase-4 emitters used `feedback`. Both fields are
-   *  populated on emit so old consumers keep working. */
-  explanation?: string;
-  /** @deprecated Use `explanation`. Kept on the wire for back-compat with
-   *  consumers that haven't migrated. New emitters set both. */
-  feedback?: string;
-  /** AMA-spec grader token usage. Populated when the verifier reports it
-   *  via `Score.metadata.usage` or by accumulating in-process LLM calls. */
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_creation_input_tokens?: number;
-    cache_read_input_tokens?: number;
-  };
 }
 
 // Aux events — platform-internal LLM calls made on behalf of a tool
@@ -808,7 +642,6 @@ export type SessionEvent =
   | UserInterruptEvent
   | UserToolConfirmationEvent
   | UserCustomToolResultEvent
-  | UserDefineOutcomeEvent
   | AgentMessageEvent
   | AgentMessageStreamStartEvent
   | AgentMessageChunkEvent
@@ -829,22 +662,17 @@ export type SessionEvent =
   | AgentThreadMessageSentEvent
   | AgentThreadMessageReceivedEvent
   | AgentThreadContextCompactedEvent
-  | OutcomeEvaluationEvent
   | SessionRunningEvent
   | SessionRescheduledEvent
   | SessionTerminatedEvent
   | SessionStatusEvent
   | SessionErrorEvent
   | SessionWarningEvent
-  | SessionOutcomeEvaluatedEvent
   | SessionThreadCreatedEvent
   | SessionThreadIdleEvent
   | SpanModelRequestStartEvent
   | SpanModelFirstTokenEvent
   | SpanModelRequestEndEvent
-  | SpanOutcomeEvaluationStartEvent
-  | SpanOutcomeEvaluationOngoingEvent
-  | SpanOutcomeEvaluationEndEvent
   | SpanCompactionSummarizeStartEvent
   | SpanCompactionSummarizeEndEvent
   | AuxModelCallEvent
@@ -873,7 +701,6 @@ export const SPEC_EVENT_TYPES: ReadonlySet<string> = new Set([
   "user.interrupt",
   "user.custom_tool_result",
   "user.tool_confirmation",
-  "user.define_outcome",
   // Agent events
   "agent.message",
   "agent.thinking",
@@ -900,9 +727,6 @@ export const SPEC_EVENT_TYPES: ReadonlySet<string> = new Set([
   // Span events
   "span.model_request_start",
   "span.model_request_end",
-  "span.outcome_evaluation_start",
-  "span.outcome_evaluation_end",
-  "span.outcome_evaluation_ongoing",
 ]);
 
 /** True when `type` is in {@link SPEC_EVENT_TYPES}. Use this on the SSE
@@ -910,89 +734,6 @@ export const SPEC_EVENT_TYPES: ReadonlySet<string> = new Set([
  *  opted into `?include=chunks`. */
 export function isSpecEvent(type: string): boolean {
   return SPEC_EVENT_TYPES.has(type);
-}
-
-// --- Vault ---
-
-export interface VaultConfig {
-  id: string;
-  name: string;
-  created_at: string;
-  updated_at?: string;
-  archived_at?: string;
-}
-
-// --- Credential ---
-
-export interface CredentialAuth {
-  type: "mcp_oauth" | "static_bearer" | "cap_cli";
-  // mcp_oauth / static_bearer: match by MCP server URL
-  mcp_server_url?: string;
-  // mcp_oauth fields
-  access_token?: string;
-  refresh_token?: string;
-  token_endpoint?: string;
-  client_id?: string;
-  client_secret?: string;
-  expires_at?: string;           // ISO 8601, when access_token expires
-  authorization_server?: string; // cached OAuth authorization server URL
-  // static_bearer / cap_cli fields
-  token?: string;
-  /** Optional provider label for generic credential routing. */
-  provider?: string;
-  // cap_cli: inject credential when sandbox traffic matches a registered
-  // cap CLI spec (gh, aws, kubectl, …). The token is held in main worker
-  // and injected by the outbound proxy at HTTPS time — never enters the
-  // sandbox container's process env. Replaces the old `command_secret`
-  // type which injected tokens directly into subprocess env (leaky).
-  cli_id?: string;                 // matches a cap.builtinSpecs cli_id (e.g. "gh", "aws")
-  extras?: Record<string, string>; // mode-specific extra fields (e.g. AWS access_key_id)
-}
-
-export interface CredentialConfig {
-  id: string;
-  vault_id: string;
-  display_name: string;
-  auth: CredentialAuth;
-  created_at: string;
-  updated_at?: string;
-  archived_at?: string;
-}
-
-// --- Memory Store ---
-
-export interface MemoryStoreConfig {
-  id: string;
-  name: string;
-  description?: string;
-  created_at: string;
-  updated_at?: string;
-  archived_at?: string;
-}
-
-export interface MemoryItem {
-  id: string;
-  store_id: string;
-  path: string;
-  content: string;
-  content_sha256?: string;
-  size_bytes: number;
-  created_at: string;
-  updated_at?: string;
-}
-
-export interface MemoryVersion {
-  id: string;
-  memory_id: string;
-  store_id: string;
-  operation: "created" | "modified" | "deleted";
-  path: string;
-  content?: string;
-  content_sha256?: string;
-  size_bytes?: number;
-  actor?: { type: string; id: string };
-  created_at: string;
-  redacted?: boolean;
 }
 
 // --- File ---
@@ -1013,28 +754,10 @@ export interface FileRecord {
 export interface SessionResource {
   id: string;
   session_id: string;
-  // `env` is the canonical name for environment-variable resources. The
-  // legacy alias `env_secret` is still accepted on writes (so older API
-  // clients keep working) but is normalized to `env` before persistence.
-  // The rename was intentional: there is no application-level encryption
-  // on these values today (only Cloudflare's at-rest layer), and the
-  // "secret" suffix was overpromising — see the type=text + mask toggle
-  // in the New Session UI for the matching change.
-  type: "file" | "memory_store" | "env" | "env_secret";
+  type: "file" | "env" | "env_secret";
   file_id?: string;
-  memory_store_id?: string;
   name?: string;
-  // authorization_token and value are NEVER stored in resource metadata
-  // They go to separate KV keys: secret:{sessionId}:{resourceId}
-  credential_id?: string;
   mount_path?: string;
-  access?: "read_write" | "read_only";
-  /**
-   * Per-attachment guidance the agent receives alongside the store's
-   * description. Anthropic-aligned: capped at 4096 characters. Replaces
-   * the legacy `prompt` field name (hard cutover, no shim).
-   */
-  instructions?: string;
   created_at: string;
 }
 

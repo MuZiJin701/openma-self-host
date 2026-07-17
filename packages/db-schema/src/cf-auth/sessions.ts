@@ -5,12 +5,7 @@
 //                            lifecycle state, terminated_at is the AMA
 //                            terminus (post-0016).
 //   session_resources      — per-session bag of typed config rows
-//                            (memory_store mounts, env_secret, etc.)
-//   session_memory_stores  — many-to-many session ↔ memory_store mount
-//                            list. Apparently shipped only via the
-//                            inline applySchema() in packages/schema —
-//                            no migration archive entry. Included here
-//                            because the cf-auth barrel comment lists it.
+//                            (file mounts, env, etc.)
 //
 // Source:
 //   apps/main/migrations/_archive/0001_schema.sql        (base shape)
@@ -21,7 +16,7 @@
 //     (terminated_at + idx_sessions_terminated)
 
 import { sql } from "drizzle-orm";
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const sessions = sqliteTable(
   "sessions",
@@ -37,7 +32,6 @@ export const sessions = sqliteTable(
     title: text("title").notNull().default(""),
     status: text("status").notNull(),
     // JSON blobs — plain TEXT, parsed in the adapter layer.
-    vault_ids: text("vault_ids"),
     agent_snapshot: text("agent_snapshot"),
     environment_snapshot: text("environment_snapshot"),
     metadata: text("metadata"),
@@ -63,7 +57,6 @@ export const sessions = sqliteTable(
       .where(sql`"terminated_at" IS NOT NULL`),
   ],
 );
-
 export const session_resources = sqliteTable(
   "session_resources",
   {
@@ -77,17 +70,4 @@ export const session_resources = sqliteTable(
     index("idx_session_resources_session").on(t.session_id, t.created_at),
     index("idx_session_resources_session_type").on(t.session_id, t.type),
   ],
-);
-
-// Live in CF MAIN_DB via the inline applySchema() path (no _archive
-// migration). Listed in the cf-auth barrel comment, so we match.
-export const session_memory_stores = sqliteTable(
-  "session_memory_stores",
-  {
-    session_id: text("session_id").notNull(),
-    store_id: text("store_id").notNull(),
-    access: text("access").notNull().default("read_write"),
-    created_at: integer("created_at").notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.session_id, t.store_id] })],
 );

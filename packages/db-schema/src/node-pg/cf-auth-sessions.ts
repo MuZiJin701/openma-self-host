@@ -1,7 +1,7 @@
 // Sessions (Node-PG variant of cf-auth/sessions).
 
 import { sql } from "drizzle-orm";
-import { bigint, index, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
+import { bigint, index, pgTable, text } from "drizzle-orm/pg-core";
 
 export const sessions = pgTable(
   "sessions",
@@ -15,7 +15,6 @@ export const sessions = pgTable(
     environment_id: text("environment_id"),
     status: text("status").notNull(),
     title: text("title"),
-    vault_ids: text("vault_ids"),
     agent_snapshot: text("agent_snapshot"),
     environment_snapshot: text("environment_snapshot"),
     metadata: text("metadata"),
@@ -35,17 +34,14 @@ export const sessions = pgTable(
       .where(sql`"terminated_at" IS NOT NULL`),
   ],
 );
-
 export const session_resources = pgTable(
   "session_resources",
   {
     id: text("id").primaryKey().notNull(),
     session_id: text("session_id").notNull(),
     type: text("type").notNull(),
-    // PG variant per applySchema() explodes the resource config across
-    // typed columns (memory_store_id, mount_path, etc.) rather than a
-    // single JSON `config` blob like CF. Keep parity here.
-    memory_store_id: text("memory_store_id"),
+    // PG variant stores the resource config in typed columns rather than a
+    // single JSON `config` blob.
     mount_path: text("mount_path"),
     access: text("access"),
     instructions: text("instructions"),
@@ -58,15 +54,4 @@ export const session_resources = pgTable(
     created_at: bigint("created_at", { mode: "number" }).notNull(),
   },
   (t) => [index("idx_session_resources_session").on(t.session_id, t.type)],
-);
-
-export const session_memory_stores = pgTable(
-  "session_memory_stores",
-  {
-    session_id: text("session_id").notNull(),
-    store_id: text("store_id").notNull(),
-    access: text("access").notNull().default("read_write"),
-    created_at: bigint("created_at", { mode: "number" }).notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.session_id, t.store_id] })],
 );

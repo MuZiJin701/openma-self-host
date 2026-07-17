@@ -592,7 +592,6 @@ v1.route("/sessions", buildSessionRoutes({
   // the selected Environment inside the authenticated user; the stable
   // sentinel remains a backwards-compatible fallback when no row is selected.
   localRuntimeEnvId: "env-local-runtime",
-  forceLocalRuntime: true,
   loadEnvironment: async ({ userId, environmentId }) => {
     const row = await environmentsService.get({ userId, environmentId });
     if (row?.archived_at) return null;

@@ -1,17 +1,6 @@
 // Agents — full CRUD with AMA-shape envelope.
 //
-// Sourced from apps/main/src/routes/agents.ts pre-extract: same AMA shape,
-// same `_oma:` envelope, same multiagent → callable_agents transform,
-// same field acceptance (no silent body field drops).
-//
-// Differences vs CF:
-//   - validateModel + validateAgentLimits have to be plumbed in by the
-//     runtime (services.modelCards isn't on the runtime-agnostic
-//     RouteServices because main-node doesn't ship a model_cards-store
-//     yet); we accept any model id and skip the cap check.
-//   - The DELETE-on-active-sessions check uses sql directly since
-//     services.sessions.hasActiveByAgent isn't on the abstract service
-//     in the Node port either.
+// Agents — full CRUD with the AMA-shaped envelope.
 
 import { Hono } from "hono";
 import type {
@@ -44,7 +33,6 @@ function formatAgent(agent: AgentConfig) {
         : { id: agent.aux_model.id, speed: agent.aux_model.speed || ("standard" as const) };
   }
   if (agent.harness) oma.harness = agent.harness;
-  if (agent.runtime_binding) oma.runtime_binding = agent.runtime_binding;
   if (agent.appendable_prompts && agent.appendable_prompts.length > 0) {
     oma.appendable_prompts = agent.appendable_prompts;
   }
@@ -65,7 +53,6 @@ function formatAgent(agent: AgentConfig) {
   const {
     aux_model: _aux,
     harness: _harness,
-    runtime_binding: _rb,
     appendable_prompts: _ap,
     callable_agents: _ca,
     ...rest
@@ -149,12 +136,6 @@ export interface AgentRoutesDeps {
     userId: string,
     agentId: string,
   ) => Promise<boolean>;
-  /** Active-evals guard for DELETE — CF blocks while runs target this
-   *  agent. Node returns false (no eval runner yet). */
-  hasActiveEvalsByAgent?: (
-    userId: string,
-    agentId: string,
-  ) => Promise<boolean>;
 }
 
 export function buildAgentRoutes(deps: AgentRoutesDeps) {
@@ -178,7 +159,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       _oma?: {
         aux_model?: string | { id: string; speed?: "standard" | "fast" };
         harness?: string;
-        runtime_binding?: AgentConfig["runtime_binding"];
         appendable_prompts?: string[];
       };
     }>();
@@ -191,14 +171,11 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       callable_agents: ma.list ?? raw.callable_agents,
       aux_model: raw._oma?.aux_model,
       harness: raw._oma?.harness ?? raw.harness,
-      runtime_binding: raw._oma?.runtime_binding,
       appendable_prompts: raw._oma?.appendable_prompts,
     };
 
     if (!body.name) return c.json({ error: "name is required" }, 400);
-    if (!body.runtime_binding && !body.model) {
-      return c.json({ error: "model is required for cloud agents" }, 400);
-    }
+    if (!body.model) return c.json({ error: "model is required" }, 400);
 
     if (deps.validateAgentLimits) {
       const limitCheck = deps.validateAgentLimits(body);
@@ -206,8 +183,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
     }
 
     const userId = c.var.user_id;
-    const isLocalRuntime = !!body.runtime_binding;
-    if (!isLocalRuntime && deps.validateModel) {
+    if (deps.validateModel) {
       const r = await deps.validateModel(userId, body.model);
       if (!r.valid) return c.json({ error: r.error }, 400);
       if (body.aux_model !== undefined) {
@@ -236,7 +212,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
         metadata: body.metadata,
         aux_model: body.aux_model,
         appendable_prompts: body.appendable_prompts,
-        runtime_binding: body.runtime_binding,
         enable_general_subagent: (body as { enable_general_subagent?: boolean })
           .enable_general_subagent,
       },
@@ -381,7 +356,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       _oma?: {
         aux_model?: string | { id: string; speed?: "standard" | "fast" } | null;
         harness?: string;
-        runtime_binding?: AgentConfig["runtime_binding"] | null;
         appendable_prompts?: string[] | null;
       };
     };
@@ -402,7 +376,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       callable_agents: callableAgents,
       aux_model: raw._oma?.aux_model,
       harness: raw._oma?.harness ?? raw.harness,
-      runtime_binding: raw._oma?.runtime_binding,
       appendable_prompts: raw._oma?.appendable_prompts,
     };
 
@@ -411,13 +384,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       if (!limitCheck.ok) return c.json({ error: limitCheck.error }, 400);
     }
 
-    const effectiveBinding =
-      body.runtime_binding === null
-        ? null
-        : (body.runtime_binding ?? existing.runtime_binding);
-    const isLocalRuntime = !!effectiveBinding;
-
-    if (!isLocalRuntime && deps.validateModel && body.model !== undefined) {
+    if (deps.validateModel && body.model !== undefined) {
       const eff = body.model ?? existing.model;
       const r = await deps.validateModel(userId, eff);
       if (!r.valid) return c.json({ error: r.error }, 400);
@@ -426,7 +393,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       const skills = await deps.validateSkills(userId, body.skills);
       if (!skills.valid) return c.json({ error: skills.error }, 400);
     }
-    if (!isLocalRuntime && deps.validateModel && body.aux_model !== undefined) {
+    if (deps.validateModel && body.aux_model !== undefined) {
       const aux =
         body.aux_model === null ? undefined : (body.aux_model ?? existing.aux_model);
       if (aux !== undefined) {
@@ -453,7 +420,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
           metadata: body.metadata,
           aux_model: body.aux_model,
           appendable_prompts: body.appendable_prompts,
-          runtime_binding: body.runtime_binding,
           enable_general_subagent: (body as { enable_general_subagent?: boolean })
             .enable_general_subagent,
         },
@@ -536,19 +502,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
           {
             error:
               "Cannot delete agent with active sessions. Archive or delete sessions first.",
-          },
-          409,
-        );
-      }
-    }
-
-    if (deps.hasActiveEvalsByAgent) {
-      const has = await deps.hasActiveEvalsByAgent(userId, id);
-      if (has) {
-        return c.json(
-          {
-            error:
-              "Cannot delete agent with active eval runs. Wait for them to finish first.",
           },
           409,
         );

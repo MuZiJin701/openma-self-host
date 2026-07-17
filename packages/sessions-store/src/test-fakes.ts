@@ -29,7 +29,6 @@ interface InMemSession {
   environment_id: string;
   title: string;
   status: SessionStatus;
-  vault_ids: string[] | null;
   agent_snapshot: AgentConfig | null;
   environment_snapshot: EnvironmentConfig | null;
   metadata: Record<string, unknown> | null;
@@ -62,7 +61,6 @@ export class InMemorySessionRepo implements SessionRepo {
       environment_id: session.environmentId,
       title: session.title,
       status: session.status,
-      vault_ids: session.vaultIds,
       agent_snapshot: session.agentSnapshot,
       environment_snapshot: session.environmentSnapshot,
       metadata: session.metadata,
@@ -267,17 +265,6 @@ export class InMemorySessionRepo implements SessionRepo {
     return n;
   }
 
-  async countResourcesByType(
-    sessionId: string,
-    type: SessionResource["type"],
-  ): Promise<number> {
-    let n = 0;
-    for (const r of this.resources.values()) {
-      if (r.session_id === sessionId && r.type === type) n++;
-    }
-    return n;
-  }
-
   async deleteResource(sessionId: string, resourceId: string): Promise<void> {
     const row = this.resources.get(resourceId);
     if (!row || row.session_id !== sessionId) return;
@@ -369,7 +356,6 @@ function toSessionRow(s: InMemSession): SessionRow {
     environment_id: s.environment_id,
     title: s.title,
     status: s.status,
-    vault_ids: s.vault_ids,
     agent_snapshot: s.agent_snapshot,
     environment_snapshot: s.environment_snapshot,
     metadata: s.metadata,

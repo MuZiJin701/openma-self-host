@@ -37,7 +37,6 @@ export interface NewAgentInput {
   metadata?: Record<string, unknown>;
   aux_model?: AgentConfig["aux_model"];
   appendable_prompts?: string[];
-  runtime_binding?: AgentConfig["runtime_binding"];
   enable_general_subagent?: boolean;
 }
 
@@ -58,7 +57,6 @@ export interface UpdateAgentInput {
   metadata?: Record<string, unknown>;
   aux_model?: AgentConfig["aux_model"] | null;
   appendable_prompts?: string[] | null;
-  runtime_binding?: AgentConfig["runtime_binding"] | null;
   enable_general_subagent?: boolean | null;
 }
 
@@ -80,7 +78,6 @@ const UPDATABLE_FIELDS = [
   "aux_model",
   "metadata",
   "appendable_prompts",
-  "runtime_binding",
   "enable_general_subagent",
 ] as const;
 
@@ -148,7 +145,6 @@ export class AgentService {
       metadata: opts.input.metadata,
       aux_model: opts.input.aux_model,
       appendable_prompts: opts.input.appendable_prompts,
-      runtime_binding: opts.input.runtime_binding,
       enable_general_subagent: opts.input.enable_general_subagent,
       version: 1,
       created_at: nowIso,

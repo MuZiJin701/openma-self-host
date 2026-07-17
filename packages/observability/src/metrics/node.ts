@@ -4,12 +4,7 @@
 //     via `getPromText()` from a /metrics route. Lazy-imported so tests
 //     and CF builds don't drag prom-client in.
 //
-//   - OTLP push: when OTEL_EXPORTER_OTLP_ENDPOINT is set we hand metrics
-//     to the OpenTelemetry MeterProvider configured by the tracer
-//     (which boots the OTel SDK). MetricExporter handles the push.
-//
-// Both backends honor the same MetricsRecorder surface so call sites are
-// agnostic.
+// The recorder exposes Prometheus text for the optional /metrics endpoint.
 
 import type {
   MetricsRecorder,

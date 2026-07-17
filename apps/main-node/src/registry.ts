@@ -298,10 +298,6 @@ export class SessionRegistry {
         const row = await this.deps.agentsService.get({ userId, agentId });
         return row ?? null;
       },
-      // Memory + outputs mounting happens in the orchestrator above.
-      // SessionStateMachine still accepts the hooks for CF parity but
-      // Node passes no-ops since the work has already been done.
-      mountMemoryStores: async () => {},
       mountSessionOutputs: async () => {},
       buildModel: (agent) => this.deps.buildModel(agent, userId),
       buildTools: (agent, sb) => this.deps.buildTools(agent, sb, userId),

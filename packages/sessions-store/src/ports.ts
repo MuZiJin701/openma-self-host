@@ -24,7 +24,6 @@ export interface NewSessionInput {
   environmentId: string;
   title: string;
   status: SessionStatus;
-  vaultIds: string[] | null;
   agentSnapshot: AgentConfig | null;
   environmentSnapshot: EnvironmentConfig | null;
   metadata: Record<string, unknown> | null;
@@ -151,9 +150,6 @@ export interface SessionRepo {
   listResources(sessionId: string): Promise<SessionResourceRow[]>;
 
   countResources(sessionId: string): Promise<number>;
-
-  /** Per-type count for the memory_store quota check (sessions.ts:884-895). */
-  countResourcesByType(sessionId: string, type: SessionResource["type"]): Promise<number>;
 
   deleteResource(sessionId: string, resourceId: string): Promise<void>;
 

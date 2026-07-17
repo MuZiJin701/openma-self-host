@@ -8,10 +8,8 @@
 // because the patch surface is broad and load-bearing for some providers
 // (e.g. AI SDK).
 //
-// Distributed propagation across the agent worker / sandbox subprocess is
-// NOT done here — the agent runs in CF where the tracer is a noop. Adding
-// it would require either a trace-id passthrough header on the few RPC
-// boundaries we cross, or wiring OTel-on-workerd. Deferred.
+// Distributed propagation across the sandbox subprocess is intentionally not
+// part of the self-host runtime.
 
 import type {
   Tracer as ObsTracer,

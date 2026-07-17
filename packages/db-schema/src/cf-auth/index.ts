@@ -1,14 +1,8 @@
-// CF MAIN_DB schema (SQLite / D1).
+// Core self-host schema (SQLite / better-sqlite3).
 //
-// Holds: user, membership, user, session, account, verification,
-// agents, agent_versions, sessions, session_resources,
-// session_memory_stores, memory_stores, memories, memory_versions,
-// memory_blob_poller_lease, vaults, credentials, model_cards,
-// environments, files, workspace_backups, runtimes, runtime_tokens,
-// connect_runtime_codes, eval_runs, usage_events, kv_entries, api_keys.
-//
-// drizzle-kit consumes this barrel via drizzle.cf-auth.config.ts and
-// emits migrations into apps/main/migrations/.
+// Holds Better Auth tables plus Agents, Sessions, Model Cards,
+// Environments, Files, Workspace backups, KV entries, and Skills.
+// drizzle-kit consumes the node-sqlite barrel for the active migration.
 
 export * from "./auth";
 export * from "./agents";

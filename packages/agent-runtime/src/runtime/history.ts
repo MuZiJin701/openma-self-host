@@ -1,6 +1,5 @@
 import type { ModelMessage, ToolModelMessage, AssistantModelMessage } from "ai";
 import type { HistoryStore } from "../harness/interface";
-import { CfDoEventLog, ensureSchema as ensureCfDoSchema } from "@open-managed-agents/event-log/cf-do";
 import { InMemoryEventLog } from "@open-managed-agents/event-log/memory";
 import type {
   SessionEvent,
@@ -271,9 +270,8 @@ function buildMessages(
   for (let i = fromIdx; i < toIdx; i++) {
     const event = events[i];
     // AMA `user.interrupt` flushes pending user inputs by setting
-    // `cancelled_at` on their event-log row. Adapter (`getEvents` in
-    // packages/event-log/src/cf-do/index.ts) stashes that as
-    // `cancelled_at_ms` on the parsed event. Skip everything that's
+    // `cancelled_at` on their event-log row. The event-log adapter stashes
+    // that as `cancelled_at_ms` on the parsed event. Skip everything that's
     // been cancelled so the LLM context never sees a flushed input.
     // Only user.* events are ever cancelled today; the guard is
     // type-agnostic so future cancellation kinds (e.g. partial
@@ -774,20 +772,6 @@ function serializeSummaryAsText(summary: ContentBlock[]): string {
  * other events (agent output, tool output, system, lifecycle) the act of
  * appending IS the processing, so we stamp at append time.
  */
-function stampEvent(event: SessionEvent): SessionEvent {
-  if (!event.id) {
-    event.id = generateEventId();
-  }
-  const isPendingUntilDrain =
-    event.type === "user.message" ||
-    event.type === "user.tool_confirmation" ||
-    event.type === "user.custom_tool_result";
-  if (!event.processed_at && !isPendingUntilDrain) {
-    event.processed_at = new Date().toISOString();
-  }
-  return event;
-}
-
 function stampEventImmediate(event: SessionEvent): SessionEvent {
   if (!event.id) {
     event.id = generateEventId();
@@ -796,47 +780,6 @@ function stampEventImmediate(event: SessionEvent): SessionEvent {
     event.processed_at = new Date().toISOString();
   }
   return event;
-}
-
-/**
- * SqliteHistory now composes the self-host `CfDoEventLog` adapter from
- * @open-managed-agents/event-log/cf-do — kept the class name for back-
- * compat with existing call sites in SessionDO. To swap backends
- * (Postgres / in-memory / etc.) construct an `InMemoryHistory` or a
- * future `PgHistory` instead — they all expose the same `HistoryStore`
- * interface (append + getEvents + getMessages).
- *
- * `getMessages` lives on the consumer side rather than in the event-log
- * port because the events→messages projection is harness-specific
- * (different harnesses may want different projections — see
- * eventsToMessages above for the canonical OMA mapping).
- */
-export class SqliteHistory implements HistoryStore {
-  private repo: CfDoEventLog;
-
-  constructor(sql: SqlStorage, r2: R2Bucket | null = null, r2KeyPrefix: string = "") {
-    this.repo = new CfDoEventLog(sql, stampEvent, r2, r2KeyPrefix);
-    // Idempotent — first construction in a DO bootstraps the schema; later
-    // ones see CREATE TABLE IF NOT EXISTS as a no-op.
-    ensureCfDoSchema(sql);
-  }
-
-  append(event: SessionEvent): void {
-    this.repo.append(event);
-  }
-
-  getEvents(afterSeq?: number): SessionEvent[] {
-    return this.repo.getEvents(afterSeq);
-  }
-
-  /** Resolve any `_spilled` references back to full events via R2. */
-  async resolveSpilledEvents(events: SessionEvent[]): Promise<SessionEvent[]> {
-    return this.repo.resolveSpilledEvents(events);
-  }
-
-  getMessages(): ModelMessage[] {
-    return eventsToMessages(this.getEvents());
-  }
 }
 
 /**

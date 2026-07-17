@@ -1,11 +1,7 @@
-// Node self-host SQLite schema — union of cf-auth + cf-router,
-// cf-router, all SQLite-typed (no PG-typed columns).
+// Node self-host SQLite schema, all SQLite-typed.
 //
-// Self-host SQLite runs on better-sqlite3 against the same SQLite engine
-// D1 uses, so the cf-* table definitions apply unchanged. The only thing
-// this barrel adds is "everything in one folder" for drizzle-kit to emit
-// a single consolidated baseline (apps/main-node/migrations-sqlite/)
-// rather than three.
+// This barrel exports everything required to emit one consolidated baseline
+// in apps/main-node/migrations-sqlite/.
 //
 // drizzle-kit consumes this barrel via drizzle.node-sqlite.config.ts.
 

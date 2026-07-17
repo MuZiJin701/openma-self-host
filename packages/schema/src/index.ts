@@ -1,10 +1,9 @@
-// Centralized schema for the self-host runtime. Idempotent — every
+// Centralized schema for the Node self-host runtime. Idempotent — every
 // CREATE TABLE / CREATE INDEX uses IF NOT EXISTS, every ALTER TABLE
 // tolerates "duplicate column" / "already exists".
 //
-// CF still uses the migration files in apps/main/migrations/ for D1
-// push history. From now on, both runtimes also call applySchema() on
-// boot so the inline DDL stays in one place.
+// SQLite and PostgreSQL use the same logical schema; generated migrations
+// remain the source of truth for upgrades and applySchema handles bootstrap.
 
 import type { SqlClient } from "@open-managed-agents/sql-client";
 import { ensureSchema as ensureEventLogSchema } from "@open-managed-agents/event-log/sql";
@@ -14,9 +13,7 @@ export type SqlDialect = "sqlite" | "postgres";
 export interface ApplySchemaOptions {
   sql: SqlClient;
   dialect: SqlDialect;
-  /** Skip the better-auth tables (CF uses D1 migrations for those; main-node
-   *  manages them inline because better-auth's kysely adapter wants them on
-   *  its own connection). */
+  /** Skip Better Auth tables when the caller bootstraps them separately. */
   includeBetterAuth?: boolean;
 }
 /**
@@ -40,7 +37,6 @@ async function withPgRaceRetry(
     }
   }
 }
-
 
 /**
  * better-auth's tables. Mirrors what `npx @better-auth/cli generate` produces
@@ -154,9 +150,3 @@ export async function applyBetterAuthSchema(opts: {
     `);
   }
 }
-
-/**
- * S3 memory poller per-store lease — only one replica polls a given store
- * at a time. Lives in this package because the lease table is the same
- * idempotent CREATE pattern as the rest of the schema.
- */

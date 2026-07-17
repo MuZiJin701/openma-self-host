@@ -1,25 +1,11 @@
-// Runtime-agnostic blob store port.
-//
-// Goal: separate "where the bytes live" (R2 / S3 / local FS / in-memory)
-// from "how the app talks to it". One BlobStore interface, multiple
-// adapters, swappable per deployment.
-//
-// Used by:
-//   - apps/main/src/routes/files.ts        (FILES_BUCKET)
-//   - apps/main/src/routes/skills.ts       (FILES_BUCKET, skill files)
-//   - apps/main/src/routes/clawhub.ts      (FILES_BUCKET, hub imports)
-//   - apps/main/src/routes/sessions.ts     (FILES_BUCKET, scoped file copies)
-//
-// Memory-store has its own narrower text-only BlobStore in
-// packages/memory-store/src/ports.ts; the two will likely converge later
-// once the full self-host migration is settled.
+// Blob store port for the Node self-host. Production uses the local
+// filesystem; the in-memory adapter is retained for tests and development.
 
 /**
- * What can be PUT to a blob. Mirrors R2 / S3 SDK accepted shapes.
+ * What can be PUT to a blob.
  *  - string: text content (UTF-8)
  *  - ArrayBuffer / ArrayBufferView: raw binary
- *  - ReadableStream<Uint8Array>: streaming upload (R2 supports this natively;
- *    S3 adapter buffers if needed)
+ *  - ReadableStream<Uint8Array>: streaming upload
  */
 export type BlobBody =
   | string
@@ -28,8 +14,7 @@ export type BlobBody =
   | ReadableStream<Uint8Array>;
 
 /**
- * Per-blob HTTP-level metadata that survives across PUT/GET. R2/S3 store this
- * separately from custom metadata; both are returned on GET.
+ * Per-blob HTTP-level metadata that survives across PUT/GET.
  */
 export interface BlobHttpMetadata {
   contentType?: string;
@@ -40,7 +25,7 @@ export interface BlobHttpMetadata {
 }
 
 export interface BlobMetadata {
-  /** Storage etag (HTTP-spec quoted on R2; verbatim on S3). Used as CAS primitive. */
+  /** Storage etag used as a CAS primitive. */
   etag: string;
   /** Object size in bytes. */
   size: number;
@@ -64,7 +49,7 @@ export interface BlobObject extends BlobMetadata {
 }
 
 /**
- * Conditional PUT semantics. Mirrors R2's `onlyIf` / S3's If-Match-headers.
+ * Conditional PUT semantics for create-only and compare-and-swap writes.
  *  - ifNoneMatch "*": create-only (PUT only if no object exists at key)
  *  - ifMatch <etag>: CAS (PUT only if existing object's etag matches)
  *
@@ -82,10 +67,8 @@ export interface BlobPutOptions {
 
 /**
  * The port. Implementations:
- *   - CfR2BlobStore (adapters/cf-r2.ts) — wraps R2Bucket
- *   - InMemoryBlobStore (adapters/in-memory.ts) — for tests / dev
- *   - S3BlobStore — TODO when needed (MinIO/AWS/Tigris)
- *   - LocalFsBlobStore — TODO when needed (single-node deployments)
+ *   - LocalFsBlobStore — production self-host storage
+ *   - InMemoryBlobStore — tests and development
  */
 export interface BlobStore {
   /** HEAD an object — returns metadata or null if not found. */

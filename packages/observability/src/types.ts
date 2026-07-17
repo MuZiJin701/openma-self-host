@@ -41,7 +41,7 @@ export type MetricTags = Record<string, string | number>;
  */
 export interface RecordableEvent {
   op: string;
-  tenant_id?: string;
+  user_id?: string;
   session_id?: string;
   agent_id?: string;
   error_name?: string;
@@ -54,8 +54,7 @@ export interface MetricsRecorder {
   counter(name: string, value?: number, tags?: MetricTags): void;
   histogram(name: string, value: number, tags?: MetricTags): void;
   gauge(name: string, value: number, tags?: MetricTags): void;
-  /** AE-shaped event write. CF wires to Analytics Engine; Node mirrors the
-   *  event into a generic `oma_events_total{op,...}` counter. */
+  /** Record a structured application event. */
   recordEvent(event: RecordableEvent): void;
 }
 

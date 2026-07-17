@@ -1,9 +1,6 @@
 // Node logger — wraps pino. Pretty mode under TTY+!production, JSON
-// otherwise. pino is loaded lazily so workerd / CF builds don't pull it.
-//
-// LOG_LEVEL env wins over the spec. Drop-in compatible with the CfLogger
-// JSON shape: same level set, same `msg` key, structured bindings flattened
-// at the root.
+// otherwise. pino is loaded lazily so the minimal install can omit it.
+// LOG_LEVEL env wins over the spec; structured bindings stay at the root.
 
 import type { Logger, LogBindings, LogLevel, LoggerSpec } from "../types";
 
@@ -30,10 +27,7 @@ export async function createNodeLogger(opts: NodeLoggerOptions = {}): Promise<Lo
   // Lazy import: pino is a peer dep so CF tsc doesn't pull it.
   const pinoMod = await import("pino").catch(() => null);
   if (!pinoMod) {
-    // Fallback to a console-backed shim — keeps the app working when
-    // pino isn't installed (e.g. dev sandbox without optional deps).
-    const { createCfLogger } = await import("./cf");
-    return createCfLogger(opts);
+    return consoleLogger(opts);
   }
   // pino ships dual ESM/CJS; the runtime shape is "default function on namespace
   // OR namespace IS the function" depending on bundler. Cast through any.
@@ -78,4 +72,29 @@ function callPino(
   if (typeof a === "string") p[level](a);
   else if (typeof b === "string") p[level](a as object, b);
   else p[level](a as object);
+}
+
+function consoleLogger(opts: LoggerSpec): Logger {
+  const bindings = opts.bindings ?? {};
+  const emit = (level: LogLevel, value: unknown, message?: string) => {
+    const payload = typeof value === "string"
+      ? { ...bindings, msg: value }
+      : { ...bindings, ...(value as LogBindings), ...(message ? { msg: message } : {}) };
+    const line = JSON.stringify(payload);
+    const write = (console as unknown as Record<string, (...args: unknown[]) => void>)[level]
+      ?? console.log;
+    write(line);
+  };
+  return {
+    trace: (a: unknown, b?: unknown) => emit("trace", a, b as string | undefined),
+    debug: (a: unknown, b?: unknown) => emit("debug", a, b as string | undefined),
+    info: (a: unknown, b?: unknown) => emit("info", a, b as string | undefined),
+    warn: (a: unknown, b?: unknown) => emit("warn", a, b as string | undefined),
+    error: (a: unknown, b?: unknown) => emit("error", a, b as string | undefined),
+    fatal: (a: unknown, b?: unknown) => emit("fatal", a, b as string | undefined),
+    child: (childBindings: LogBindings) => consoleLogger({
+      ...opts,
+      bindings: { ...bindings, ...childBindings },
+    }),
+  } as Logger;
 }

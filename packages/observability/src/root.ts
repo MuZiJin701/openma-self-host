@@ -1,5 +1,5 @@
 // Process-wide root-logger registry so package-level code can call
-// `getLogger("memory-store")` without taking a Logger as a constructor
+// `getLogger("sessions")` without taking a Logger as a constructor
 // arg. main-node bootstrap calls `setRootLogger(...)` once; packages
 // pull a child logger off it lazily.
 
@@ -59,8 +59,8 @@ export function setRootLogger(logger: Logger): void {
   rootLogger = logger;
 }
 
-/** `getLogger("memory-store")` returns a child of the bootstrap logger
- *  bound with `module: "memory-store"`. Until `setRootLogger` runs (e.g.
+/** `getLogger("sessions")` returns a child of the bootstrap logger
+ *  bound with `module: "sessions"`. Until `setRootLogger` runs (e.g.
  *  in tests or pre-bootstrap code) it returns a noop child. */
 export function getLogger(module: string, extra?: LogBindings): Logger {
   return rootLogger.child({ module, ...(extra ?? {}) });

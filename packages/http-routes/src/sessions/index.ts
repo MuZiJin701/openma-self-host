@@ -1,6 +1,5 @@
-// Sessions routes — runtime-agnostic mount over the SessionRouter.
-// Node self-host session routes. Storage and runtime-specific operations
-// are supplied through small lifecycle hooks so the API remains testable.
+// Sessions routes for the Node self-host. Storage and file operations are
+// supplied through small hooks so the API remains testable.
 
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
@@ -13,7 +12,6 @@ import {
 import type {
   AgentConfig,
   ContentBlock,
-  CredentialConfig,
   EnvironmentConfig,
   SessionEvent,
   SessionResource,
@@ -21,7 +19,6 @@ import type {
 } from "@open-managed-agents/shared";
 import {
   SessionArchivedError,
-  SessionMemoryStoreMaxExceededError,
   SessionNotFoundError,
   SessionResourceMaxExceededError,
   SessionResourceNotFoundError,
@@ -39,7 +36,6 @@ const ALLOWED_EVENT_TYPES = new Set<string>([
   "user.interrupt",
   "user.tool_confirmation",
   "user.custom_tool_result",
-  "user.define_outcome",
 ]);
 
 function isLocalRuntimeEnvironment(environment: EnvironmentConfig): boolean {
@@ -72,28 +68,6 @@ export interface OutputsAdapter {
 }
 
 export interface SessionLifecycleHooks {
-  /** Pre-create gate (USAGE_METER.canStartSandbox). Returns null to
-   *  proceed; { status, body } to short-circuit. */
-  preCreateGate?: (input: {
-    userId: string;
-    agentId: string;
-    isLocalRuntime: boolean;
-  }) => Promise<{ status: number; body: unknown } | null>;
-  /** Refresh credentials for the given vault set and return warning events. */
-  refreshSessionCredentials?: (input: {
-    userId: string;
-    agentId: string;
-    vaultIds: string[];
-  }) => Promise<SessionEvent[]>;
-  /** Per-session daily-cap + per-minute rate-limit on session create. */
-  preCreateRateLimit?: (input: {
-    userId: string;
-  }) => Promise<{ status: number; body: unknown } | null>;
-  /** Best-effort daemon dispose forward (CF RuntimeRoom). Called on DELETE. */
-  notifyDaemonDispose?: (input: {
-    runtimeId: string;
-    sessionId: string;
-  }) => Promise<void>;
   /** Resolve {file_id} ContentBlocks to inline base64 + return mount ids
    *  for the sandbox. CF: reads bytes from FILES_BUCKET. Node: returns
    *  blocks unchanged (file_id resolution lands in the Node port later). */
@@ -147,25 +121,15 @@ export interface SessionRoutesDeps {
     userId: string;
     environmentId: string;
   }) => Promise<EnvironmentConfig | null>;
-  /** Local-runtime sentinel — cloud sessions require explicit env_id. */
+  /** Default local environment used when the request omits environment_id. */
   localRuntimeEnvId?: string;
-  /** Node self-host mode: every agent runs in the built-in local runtime. */
-  forceLocalRuntime?: boolean;
-  /** Vault credential bundling for /init. Both runtimes read from
-   *  services.credentials but we keep it pluggable for future variants. */
-  fetchVaultCredentials?: (input: {
-    userId: string;
-    vaultIds: string[];
-  }) => Promise<Array<{ vault_id: string; credentials: CredentialConfig[] }>>;
   /** Outputs surface — CF wraps R2; Node wraps the local FS in
    *  outputsRoot. Null disables /outputs routes. */
   outputs?: OutputsAdapter | null;
   /** Optional debug-token gate for POST /v1/sessions/:id/__debug_recovery__.
    *  When unset the route 404s. */
   debugRecoveryToken?: string;
-  /** CF lifecycle hooks (USAGE_METER, refresh, fast-path, etc.). All
-   *  optional — Node leaves them undefined and the package degrades
-   *  gracefully (no-op). */
+  /** Optional file/session lifecycle hooks used by the Node composition root. */
   lifecycle?: SessionLifecycleHooks;
 }
 
@@ -181,7 +145,6 @@ function mapSessionError(c: Context, err: unknown): Response {
   if (err instanceof SessionResourceNotFoundError) return c.json({ error: "Resource not found" }, 404);
   if (err instanceof SessionArchivedError) return c.json({ error: err.message }, 409);
   if (err instanceof SessionResourceMaxExceededError) return c.json({ error: err.message }, 400);
-  if (err instanceof SessionMemoryStoreMaxExceededError) return c.json({ error: err.message }, 422);
   throw err;
 }
 
@@ -193,7 +156,6 @@ function snapshotToSessionAgent(
   const {
     aux_model: _a,
     harness: _h,
-    runtime_binding: _rb,
     appendable_prompts: _ap,
     callable_agents,
     archived_at: _ar,
@@ -229,7 +191,6 @@ function toApiSession(row: {
   environment_id?: string;
   environment_snapshot?: EnvironmentConfig | null;
   title?: string | null;
-  vault_ids?: string[] | null;
   metadata?: Record<string, unknown> | null;
   status: string;
   created_at: string;
@@ -243,7 +204,6 @@ function toApiSession(row: {
     agent_snapshot,
     environment_snapshot: _es,
     title,
-    vault_ids,
     metadata,
     ...rest
   } = row;
@@ -259,10 +219,8 @@ function toApiSession(row: {
     title: title ?? null,
     agent_id,
     agent: snapshotToSessionAgent(agent_id, agent_snapshot ?? null),
-    vault_ids: vault_ids ?? [],
     metadata: metadata ?? {},
     resources: [] as unknown[],
-    outcome_evaluations: [] as unknown[],
     usage: {} as Record<string, unknown>,
     stats: durationSeconds !== undefined ? { duration_seconds: durationSeconds } : {},
   };
@@ -277,24 +235,15 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const t = c.var.user_id;
 
-    if (deps.lifecycle?.preCreateRateLimit) {
-      const r = await deps.lifecycle.preCreateRateLimit({ userId: t });
-      if (r) return c.json(r.body as object, r.status as 429);
-    }
-
     const body = await c.req.json<{
       agent: string | { id: string; version?: number };
       environment_id?: string;
       environment?: string | { id: string };
       title?: string;
-      vault_ids?: string[];
       resources?: Array<{
-        type: "file" | "memory_store" | "env" | "env_secret";
+        type: "file" | "env" | "env_secret";
         file_id?: string;
-        memory_store_id?: string;
         mount_path?: string;
-        access?: "read_write" | "read_only";
-        instructions?: string;
         name?: string;
         value?: string;
       }>;
@@ -305,37 +254,10 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       typeof body.environment === "string" ? body.environment : body.environment?.id;
     if (!agentId) return c.json({ error: "agent is required" }, 400);
 
-    const memCount = (body.resources ?? []).filter((r) => r.type === "memory_store").length;
-    if (memCount > 8) {
-      return c.json({ error: "Maximum 8 memory_store resources per session" }, 422);
-    }
-
-    const seenStores = new Set<string>();
-    for (const r of body.resources ?? []) {
-      if (r.type === "memory_store" && r.memory_store_id) {
-        if (seenStores.has(r.memory_store_id)) {
-          return c.json(
-            { error: `Duplicate memory_store resource: ${r.memory_store_id}` },
-            422,
-          );
-        }
-        seenStores.add(r.memory_store_id);
-      }
-    }
-
     const agentRow = await services.agents.get({ userId: t, agentId });
     if (!agentRow) return c.json({ error: "Agent not found" }, 404);
 
-    const agentIsLocalRuntime = Boolean(deps.forceLocalRuntime || agentRow.runtime_binding);
-
-    if (deps.lifecycle?.preCreateGate) {
-      const gate = await deps.lifecycle.preCreateGate({
-        userId: t,
-        agentId,
-        isLocalRuntime: agentIsLocalRuntime,
-      });
-      if (gate) return c.json(gate.body as object, gate.status as 402);
-    }
+    const agentIsLocalRuntime = true;
 
     let envId = body.environment_id ?? wrappedEnv;
     if (!envId) {
@@ -355,38 +277,13 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     if (agentIsLocalRuntime && envSnap && !isLocalRuntimeEnvironment(envSnap)) {
       return c.json({ error: "environment_not_supported", environment_id: envId }, 501);
     }
-    const vaultIds = body.vault_ids ?? [];
-
-    const refreshEvents = deps.lifecycle?.refreshSessionCredentials
-      ? await deps.lifecycle.refreshSessionCredentials({
-          userId: t,
-          agentId,
-          vaultIds,
-        })
-      : [];
-
-    const vaultCreds = deps.fetchVaultCredentials
-      ? await deps.fetchVaultCredentials({ userId: t, vaultIds })
-      : [];
-
     // Build initial resource inputs (non-file).
     const nonFileInputs: Array<{
-      type: "memory_store" | "env";
+      type: "env";
       [k: string]: unknown;
     }> = [];
     for (const res of body.resources ?? []) {
-      if (res.type === "memory_store" && res.memory_store_id) {
-        nonFileInputs.push({
-          type: "memory_store",
-          memory_store_id: res.memory_store_id,
-          mount_path: res.mount_path,
-          access: res.access === "read_only" ? "read_only" : "read_write",
-          instructions:
-            typeof res.instructions === "string"
-              ? res.instructions.slice(0, 4096)
-              : undefined,
-        });
-      } else if ((res.type === "env" || res.type === "env_secret") && res.name && res.value) {
+      if ((res.type === "env" || res.type === "env_secret") && res.name && res.value) {
         nonFileInputs.push({ type: "env", name: res.name });
       }
     }
@@ -399,7 +296,6 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
         agentId,
         environmentId: envId,
         title: body.title ?? "",
-        vaultIds,
         agentSnapshot: agentSnapshot as AgentConfig,
         environmentSnapshot: envSnap ?? undefined,
         resources: nonFileInputs as never,
@@ -417,11 +313,8 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       environmentId: envId,
       title: body.title ?? "",
       userId: t,
-      vaultIds,
       agentSnapshot: agentSnapshot as AgentConfig,
       environmentSnapshot: envSnap ?? undefined,
-      vaultCredentials: vaultCreds,
-      initEvents: refreshEvents,
     };
     await router.init(sessionId, initParams).catch((err) => {
       console.warn(`[sessions] router.init failed for ${sessionId}:`, err);
@@ -529,7 +422,6 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     if (live) {
       response.status = live.status;
       response.usage = live.usage;
-      if (live.outcome_evaluations) response.outcome_evaluations = live.outcome_evaluations;
       if (live.resources) response.resources = live.resources;
     }
     return c.json(response);
@@ -577,15 +469,6 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
 
     // Best-effort runtime teardown — never blocks the row delete.
     await router.destroy(id).catch(() => undefined);
-
-    // Local-runtime daemon dispose.
-    const rid = (sess as unknown as { agent_snapshot?: { runtime_binding?: { runtime_id?: string } } })
-      .agent_snapshot?.runtime_binding?.runtime_id;
-    if (rid && deps.lifecycle?.notifyDaemonDispose) {
-      await deps.lifecycle
-        .notifyDaemonDispose({ runtimeId: rid, sessionId: id })
-        .catch(() => undefined);
-    }
 
     try {
       await services.sessions.delete({ userId: t, sessionId: id });
@@ -846,30 +729,6 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     });
   });
 
-  // ── LLM call body fetch ───────────────────────────────────────────────
-  // GET /v1/sessions/:id/llm-calls/:event_id — read the persisted full
-  // LLM request/response body for one span.model_request_end event.
-  // CF reads from R2 (FILES_BUCKET); other runtimes return 501.
-  app.get("/:id/llm-calls/:event_id", async (c) => {
-    const services = resolveServices(deps.services, c);
-    const router = resolveRouter(deps.router, c);
-    const userId = c.var.user_id;
-    const sessionId = c.req.param("id");
-    const eventId = c.req.param("event_id");
-    const sess = await services.sessions.get({ userId, sessionId });
-    if (!sess) return c.json({ error: "Session not found" }, 404);
-    const result = await router.getLlmCallBody(userId, sessionId, eventId);
-    return new Response(result.body, {
-      status: result.status,
-      headers: {
-        "content-type": result.contentType,
-        ...(("contentLength" in result && result.contentLength != null)
-          ? { "content-length": String(result.contentLength) }
-          : {}),
-      },
-    });
-  });
-
   // ── Debug recovery ────────────────────────────────────────────────────
   app.post("/:id/__debug_recovery__", async (c) => {
     if (!deps.debugRecoveryToken) return c.json({ error: "not found" }, 404);
@@ -966,19 +825,13 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const sessionId = c.req.param("id");
     const t = c.var.user_id;
     const body = await c.req.json<{
-      type: "file" | "memory_store";
+      type: "file";
       file_id?: string;
-      memory_store_id?: string;
       mount_path?: string;
-      access?: "read_write" | "read_only";
-      instructions?: string;
     }>();
     if (!body.type) return c.json({ error: "type is required" }, 400);
     if (body.type === "file") {
       if (!body.file_id) return c.json({ error: "file_id is required for file resources" }, 400);
-    }
-    if (body.type === "memory_store" && !body.memory_store_id) {
-      return c.json({ error: "memory_store_id is required for memory_store resources" }, 400);
     }
     try {
       let fileId = body.file_id;
@@ -995,18 +848,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
         resource: {
           type: body.type,
           file_id: fileId,
-          memory_store_id: body.memory_store_id,
           mount_path: body.mount_path,
-          access:
-            body.type === "memory_store"
-              ? body.access === "read_only"
-                ? "read_only"
-                : "read_write"
-              : undefined,
-          instructions:
-            body.type === "memory_store" && typeof body.instructions === "string"
-              ? body.instructions.slice(0, 4096)
-              : undefined,
         } as never,
       });
       return c.json(added.resource, 201);
