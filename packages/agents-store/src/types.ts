@@ -3,7 +3,7 @@
 //
 // Design choices:
 //   - AgentRow IS the canonical AgentConfig — adapters JSON.parse the `config`
-//     column and round-trip the whole thing. Hot fields (tenant_id, version,
+//     column and round-trip the whole thing. Hot fields (user_id, version,
 //     created_at, archived_at) live as their own columns for query-side
 //     filtering / ordering; the JSON blob carries the rest.
 //   - Two-table design: `agents` holds the current row (one per id);
@@ -16,11 +16,11 @@ import type { AgentConfig } from "@open-managed-agents/shared";
 
 /**
  * Current-state agent row. Equivalent to the AgentConfig shape with the
- * tenant_id surfaced (the legacy KV value never carried tenant_id since the
+ * user_id surfaced (the legacy KV value never carried user_id since the
  * KV key encoded it). All sub-fields are the parsed AgentConfig fields.
  */
 export type AgentRow = AgentConfig & {
-  tenant_id: string;
+  user_id: string;
 };
 
 /**
@@ -31,7 +31,7 @@ export type AgentRow = AgentConfig & {
  */
 export interface AgentVersionRow {
   agent_id: string;
-  tenant_id: string;
+  user_id: string;
   version: number;
   /** Full AgentConfig at that version. */
   snapshot: AgentConfig;

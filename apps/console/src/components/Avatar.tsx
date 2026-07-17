@@ -7,14 +7,14 @@ import { cn } from "@/lib/utils";
 
 /**
  * Initial-circle avatar. Image when present, falls back to a brand-tinted
- * circle with the entity's first letter (uppercase). Used for tenants,
+ * circle with the entity's first letter (uppercase). Used for users,
  * users, and bot personas — anywhere a visual id sits next to a name.
  *
  * Wraps shadcn `Avatar` so AvatarPrimitive's image-error fallback handling
  * (auto-shows the fallback if the URL 404s) replaces the previous
  * onError style:none hack. Sizes are pinned manually because shadcn
  * only ships sm / default (size-8) / lg — we still need xs for dense
- * rows. squared is preserved for tenant avatars (read as "workspace"
+ * rows. squared is preserved for user avatars (read as "workspace"
  * rather than "person").
  */
 const SIZE: Record<"xs" | "sm" | "md" | "lg", string> = {
@@ -30,7 +30,7 @@ interface AvatarProps {
   /** Optional image url (e.g. persona avatar from an integration). */
   src?: string | null;
   size?: keyof typeof SIZE;
-  /** Use rounded-md (square-ish) instead of rounded-full. Tenant avatars
+  /** Use rounded-md (square-ish) instead of rounded-full. User avatars
    *  use this so they read as "workspace" not "person". */
   squared?: boolean;
   className?: string;

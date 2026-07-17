@@ -136,7 +136,7 @@ export function trimPage<T>(rows: T[], limit: number): PageResult<T> {
  *       cursor: opts.cursor,
  *       limit: opts.limit,
  *       fetch: (after, limit) =>
- *         this.repo.listPage(opts.tenantId, {includeArchived: ..., limit, after}),
+ *         this.repo.listPage(opts.userId, {includeArchived: ..., limit, after}),
  *       extractCursor: (r) =>
  *         ({createdAt: new Date(r.created_at).getTime(), id: r.id}),
  *     });

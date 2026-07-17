@@ -10,17 +10,17 @@ afterEach(() => {
   for (const path of created.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
-describe("tenant workspace", () => {
-  it("shares files between sessions of the same tenant", async () => {
+describe("user workspace", () => {
+  it("shares files between sessions of the same user", async () => {
     const root = mkdtempSync(join(tmpdir(), "oma-workspace-"));
     created.push(root);
     const sessionA = new LocalSubprocessSandbox({
-      workdir: join(root, "tenant-a"),
+      workdir: join(root, "user-a"),
       sessionId: "session-a",
       sharedWorkspace: true,
     });
     const sessionB = new LocalSubprocessSandbox({
-      workdir: join(root, "tenant-a"),
+      workdir: join(root, "user-a"),
       sessionId: "session-b",
       sharedWorkspace: true,
     });
@@ -30,29 +30,29 @@ describe("tenant workspace", () => {
     await expect(sessionB.readFile("/workspace/shared.txt")).resolves.toBe("hello");
   });
 
-  it("does not expose one tenant's workspace to another tenant", async () => {
+  it("does not expose one user's workspace to another user", async () => {
     const root = mkdtempSync(join(tmpdir(), "oma-workspace-"));
     created.push(root);
-    const tenantA = new LocalSubprocessSandbox({
-      workdir: join(root, "tenant-a"),
+    const userA = new LocalSubprocessSandbox({
+      workdir: join(root, "user-a"),
       sessionId: "session-a",
       sharedWorkspace: true,
     });
-    const tenantB = new LocalSubprocessSandbox({
-      workdir: join(root, "tenant-b"),
+    const userB = new LocalSubprocessSandbox({
+      workdir: join(root, "user-b"),
       sessionId: "session-b",
       sharedWorkspace: true,
     });
 
-    await tenantA.writeFile("/workspace/private.txt", "secret");
+    await userA.writeFile("/workspace/private.txt", "secret");
 
-    await expect(tenantB.readFile("/workspace/private.txt")).rejects.toThrow();
+    await expect(userB.readFile("/workspace/private.txt")).rejects.toThrow();
   });
 
-  it("does not delete a tenant workspace when one session is destroyed", async () => {
+  it("does not delete a user workspace when one session is destroyed", async () => {
     const root = mkdtempSync(join(tmpdir(), "oma-workspace-"));
     created.push(root);
-    const workspace = join(root, "tenant-a");
+    const workspace = join(root, "user-a");
     const sessionA = new LocalSubprocessSandbox({
       workdir: workspace,
       sessionId: "session-a",

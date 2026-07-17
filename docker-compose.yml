@@ -9,12 +9,10 @@ services:
       - path: ./.env
         required: false
     environment:
+      DATA_DIR: /app/data
       DATABASE_PATH: /app/data/oma.db
       AUTH_DATABASE_PATH: /app/data/auth.db
       SANDBOX_PROVIDER: subprocess
-      SANDBOX_WORKDIR: /app/data/sandboxes
-      FILES_BLOB_DIR: /app/data/files-blobs
-      SESSION_OUTPUTS_DIR: /app/data/session-outputs
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       PLATFORM_ROOT_SECRET: ${PLATFORM_ROOT_SECRET:-}
       AUTH_DISABLED: ${AUTH_DISABLED:-}

@@ -25,10 +25,10 @@ export const generateDreamId = () => `drm-${nanoid()}`;
 export const generateOutcomeId = () => `outc_${nanoid()}`;
 
 /**
- * Stable fallback environment_id for self-host sessions when no tenant-owned
+ * Stable fallback environment_id for self-host sessions when no user-owned
  * Environment record is selected. Anthropic's Managed Agents API requires
  * environment_id on every session; explicit sessions may instead reference
- * any tenant-owned Environment whose config type is `local`.
+ * any user-owned Environment whose config type is `local`.
  *
  * The value remains stable for backwards compatibility with existing rows and
  * local development clients. It is not a singleton Environment record.

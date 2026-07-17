@@ -19,8 +19,8 @@ import type { PageCursor } from "@open-managed-agents/shared";
 
 export interface NewModelCardInput {
   id: string;
-  tenantId: string;
-  /** Tenant-unique handle. UNIQUE(tenant_id, model_id) enforced in DB. */
+  userId: string;
+  /** User-unique handle. UNIQUE(user_id, model_id) enforced in DB. */
   modelId: string;
   provider: string;
   /** LLM string sent to the provider API. Defaults to modelId when callers
@@ -32,7 +32,7 @@ export interface NewModelCardInput {
   apiKeyPreview: string;
   /**
    * When true, the repo MUST clear any existing is_default=1 row in this
-   * tenant atomically (single batch) before inserting this row. Without that
+   * user atomically (single batch) before inserting this row. Without that
    * the partial UNIQUE index would reject the insert.
    */
   isDefault: boolean;
@@ -51,7 +51,7 @@ export interface ModelCardUpdateFields {
   apiKeyPreview?: string;
   /**
    * When true, the repo MUST atomically clear any existing is_default=1 row
-   * in the tenant (other than this one) before flipping this row's is_default
+   * in the user (other than this one) before flipping this row's is_default
    * to 1. When false, the repo just sets is_default=0.
    */
   isDefault?: boolean;
@@ -61,16 +61,16 @@ export interface ModelCardUpdateFields {
 export interface ModelCardRepo {
   /**
    * Insert a new model card. Throws {@link ModelCardDuplicateModelIdError} on
-   * (tenant_id, model_id) UNIQUE violation. When `input.isDefault` is true,
+   * (user_id, model_id) UNIQUE violation. When `input.isDefault` is true,
    * atomically clears the previous default in the same batch — see the
    * partial UNIQUE index in 0013_model_cards_table.sql.
    */
   insert(input: NewModelCardInput): Promise<ModelCardRow>;
 
-  get(tenantId: string, cardId: string): Promise<ModelCardRow | null>;
+  get(userId: string, cardId: string): Promise<ModelCardRow | null>;
 
-  /** List all cards for a tenant. Default order: created_at ASC (legacy KV order). */
-  list(tenantId: string): Promise<ModelCardRow[]>;
+  /** List all cards for a user. Default order: created_at ASC (legacy KV order). */
+  list(userId: string): Promise<ModelCardRow[]>;
 
   /**
    * Cursor-paginated list. Order: created_at DESC, id DESC.
@@ -81,7 +81,7 @@ export interface ModelCardRepo {
    * valid across all filter combinations.
    */
   listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       limit: number;
       after?: PageCursor;
@@ -99,45 +99,45 @@ export interface ModelCardRepo {
   ): Promise<{ items: ModelCardRow[]; hasMore: boolean }>;
 
   /**
-   * Find an active card by (tenant_id, model_id). Used by the agent worker's
+   * Find an active card by (user_id, model_id). Used by the agent worker's
    * model resolver to derive credentials from `agent.model`. Returns the
    * card whose `model_id` exactly matches.
    */
-  findByModelId(tenantId: string, modelId: string): Promise<ModelCardRow | null>;
+  findByModelId(userId: string, modelId: string): Promise<ModelCardRow | null>;
 
-  /** Single-row read of the tenant default. NULL when no default is set. */
-  getDefault(tenantId: string): Promise<ModelCardRow | null>;
+  /** Single-row read of the user default. NULL when no default is set. */
+  getDefault(userId: string): Promise<ModelCardRow | null>;
 
   /**
    * Patch the model card. UNIQUE + partial-UNIQUE rules apply same as insert
    * — see error types above. When `update.isDefault` is true, the repo MUST
-   * atomically clear other defaults in this tenant before setting this row's
+   * atomically clear other defaults in this user before setting this row's
    * is_default = 1.
    */
   update(
-    tenantId: string,
+    userId: string,
     cardId: string,
     update: ModelCardUpdateFields,
   ): Promise<ModelCardRow>;
 
   /** Hard-delete. Caller is responsible for any cascade (none today). */
-  delete(tenantId: string, cardId: string): Promise<void>;
+  delete(userId: string, cardId: string): Promise<void>;
 
   /** Soft-archive a card so active model resolution no longer finds it. */
-  archive(tenantId: string, cardId: string, archivedAt: number): Promise<ModelCardRow>;
+  archive(userId: string, cardId: string, archivedAt: number): Promise<ModelCardRow>;
 
   /**
-   * Atomic clear-then-set: clears every is_default = 1 row in the tenant and
+   * Atomic clear-then-set: clears every is_default = 1 row in the user and
    * marks this card as default. Replaces the legacy clearDefaults+setDefault
    * loop in model-cards.ts:49-51 / 118-120.
    */
-  setDefault(tenantId: string, cardId: string, updatedAt: number): Promise<ModelCardRow>;
+  setDefault(userId: string, cardId: string, updatedAt: number): Promise<ModelCardRow>;
 
   /**
    * Fetch the encrypted api_key blob. Returns NULL when the card is missing
-   * or doesn't belong to the tenant. Service decrypts via the `Crypto` port.
+   * or doesn't belong to the user. Service decrypts via the `Crypto` port.
    */
-  getApiKeyCipher(tenantId: string, cardId: string): Promise<string | null>;
+  getApiKeyCipher(userId: string, cardId: string): Promise<string | null>;
 }
 
 /** Symmetric encryption boundary for the api_key at rest. */

@@ -1,9 +1,8 @@
 // Model cards (Node-PG variant of cf-auth/model-cards).
 //
-// Diverges from CF: Node-PG path predates the 0015 handle rename — it
-// keeps `display_name` and DOES NOT have a `model` column. Phase 3
-// reconciliation will land both columns. Until then, ports here
-// match what packages/schema/src/index.ts ships.
+// Keep this schema aligned with the active self-host model-card contract:
+// `model_id` is the user-facing handle and `model` is the provider model
+// string sent on the wire.
 
 import { sql } from "drizzle-orm";
 import { bigint, index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
@@ -12,11 +11,10 @@ export const model_cards = pgTable(
   "model_cards",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     model_id: text("model_id").notNull(),
     provider: text("provider").notNull(),
-    // PG-side keeps display_name (CF dropped it in 0015). Drift tracked.
-    display_name: text("display_name").notNull(),
+    model: text("model").notNull().default(""),
     base_url: text("base_url"),
     custom_headers: text("custom_headers"),
     api_key_cipher: text("api_key_cipher").notNull(),
@@ -28,8 +26,9 @@ export const model_cards = pgTable(
     archived_at: bigint("archived_at", { mode: "number" }),
   },
   (t) => [
-    uniqueIndex("idx_model_cards_model_id").on(t.tenant_id, t.model_id),
-    uniqueIndex("idx_model_cards_default").on(t.tenant_id).where(sql`"is_default" = 1`),
-    index("idx_model_cards_tenant").on(t.tenant_id, t.created_at),
+    uniqueIndex("idx_model_cards_model_id").on(t.user_id, t.model_id),
+    uniqueIndex("idx_model_cards_default").on(t.user_id).where(sql`"is_default" = 1`),
+    index("idx_model_cards_user").on(t.user_id, t.created_at),
+    index("idx_model_cards_user_created_id").on(t.user_id, t.created_at, t.id),
   ],
 );

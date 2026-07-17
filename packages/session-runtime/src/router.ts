@@ -34,7 +34,7 @@ export interface SessionInitParams {
   agentId: string;
   environmentId: string;
   title: string;
-  tenantId: string;
+  userId: string;
   vaultIds?: string[];
   agentSnapshot?: AgentConfig;
   environmentSnapshot?: EnvironmentConfig;
@@ -218,10 +218,10 @@ export interface SessionRouter {
   /** GET /v1/sessions/:id/llm-calls/:event_id — fetch the persisted full
    *  LLM request/response body for a single span.model_request_end event.
    *  CF reads from R2 (FILES_BUCKET) at
-   *  `t/{tenantId}/sessions/{sessionId}/llm/{eventId}.json`; runtimes
+   *  `t/{userId}/sessions/{sessionId}/llm/{eventId}.json`; runtimes
    *  without that storage (Node single-host) return 501. */
   getLlmCallBody(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     eventId: string,
   ): Promise<{ status: number; body: BodyInit; contentType: string; contentLength?: number } | { status: 404 | 500 | 501; body: string; contentType: "application/json" }>;
@@ -232,6 +232,6 @@ export interface SessionRouter {
  *  storage. Currently unused — placeholder for the parallel route that
  *  promotes inline data into a re-referenceable file_id. */
 export type FileIdResolver = (input: {
-  tenantId: string;
+  userId: string;
   blocks: ContentBlock[];
 }) => Promise<{ blocks: ContentBlock[]; mountFileIds: string[] }>;

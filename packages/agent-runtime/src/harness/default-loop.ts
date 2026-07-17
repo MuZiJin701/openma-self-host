@@ -396,7 +396,7 @@ export class DefaultHarness implements HarnessInterface {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             model: model as any,
             middleware: llmLoggingMiddleware({
-              tenant_id: llmLogCtx.tenant_id,
+              user_id: llmLogCtx.user_id,
               session_id: llmLogCtx.session_id,
               r2: llmLogCtx.r2,
               spanIdResolver: () => stepStartId,
@@ -587,7 +587,7 @@ export class DefaultHarness implements HarnessInterface {
         // at read time; we surface it on the event so consumers don't
         // have to know the key layout. Absent when llm logging is off.
         const bodyR2Key = llmLogCtx
-          ? llmLogKey(llmLogCtx.tenant_id, llmLogCtx.session_id, stepStartId ?? "")
+          ? llmLogKey(llmLogCtx.user_id, llmLogCtx.session_id, stepStartId ?? "")
           : undefined;
         runtime.broadcast({
           type: "span.model_request_end",
@@ -637,7 +637,7 @@ export class DefaultHarness implements HarnessInterface {
           is_error: true,
           error_message: message.slice(0, 500),
           ...(llmLogCtx
-            ? { body_r2_key: llmLogKey(llmLogCtx.tenant_id, llmLogCtx.session_id, stepStartId) }
+            ? { body_r2_key: llmLogKey(llmLogCtx.user_id, llmLogCtx.session_id, stepStartId) }
             : {}),
         } as SessionEvent);
         stepStartId = null;
@@ -656,7 +656,7 @@ export class DefaultHarness implements HarnessInterface {
           final_text_length: 0,
           is_error: false,
           ...(llmLogCtx
-            ? { body_r2_key: llmLogKey(llmLogCtx.tenant_id, llmLogCtx.session_id, stepStartId) }
+            ? { body_r2_key: llmLogKey(llmLogCtx.user_id, llmLogCtx.session_id, stepStartId) }
             : {}),
         });
         stepStartId = null;

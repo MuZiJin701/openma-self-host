@@ -1,7 +1,7 @@
 // Analytics Engine writer for OMA error/event metrics.
 //
 // AE is wider but cheaper than Logpush — datasets give you SQL queries +
-// Grafana dashboards over high-cardinality dims (op, tenant_id, error_name)
+// Grafana dashboards over high-cardinality dims (op, user_id, error_name)
 // without paying per-byte log storage. Use AE for things you might want to
 // alert on; use logError() for things you need to read in narrative form.
 //
@@ -14,7 +14,7 @@
 // Schema convention (DO NOT reorder — column positions are load-bearing for
 // existing queries):
 //   indexes: [op]
-//   blobs:   [op, tenant_id, session_id, agent_id, error_name, error_message]
+//   blobs:   [op, user_id, session_id, agent_id, error_name, error_message]
 //   doubles: [duration_ms]   // optional, defaults to 0
 //
 // Example query (CF SQL API):
@@ -35,7 +35,7 @@ export interface AnalyticsBinding {
 export interface RecordableEvent {
   /** Required. "<area>.<verb>", e.g. "session.delete.cleanup_failed". */
   op: string;
-  tenant_id?: string;
+  user_id?: string;
   session_id?: string;
   agent_id?: string;
   /** Error class name from `err.name`, e.g. "TypeError". */
@@ -63,7 +63,7 @@ export function recordEvent(
       indexes: [event.op],
       blobs: [
         event.op,
-        event.tenant_id ?? "",
+        event.user_id ?? "",
         event.session_id ?? "",
         event.agent_id ?? "",
         event.error_name ?? "",

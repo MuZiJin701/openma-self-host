@@ -16,8 +16,8 @@ export const model_cards = sqliteTable(
   "model_cards",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
-    // Post-0015 semantics: this is the tenant-unique USER-FACING handle
+    user_id: text("user_id").notNull(),
+    // Post-0015 semantics: this is the user-unique USER-FACING handle
     // (agents reference it via agent.model). Was previously the LLM
     // model string; same column name, new meaning.
     model_id: text("model_id").notNull(),
@@ -37,12 +37,12 @@ export const model_cards = sqliteTable(
     model: text("model").notNull().default(""),
   },
   (t) => [
-    // Hard UNIQUE: one model_id (handle) per tenant.
-    uniqueIndex("idx_model_cards_model_id").on(t.tenant_id, t.model_id),
-    // Partial UNIQUE: at most one default per tenant. Service layer
+    // Hard UNIQUE: one model_id (handle) per user.
+    uniqueIndex("idx_model_cards_model_id").on(t.user_id, t.model_id),
+    // Partial UNIQUE: at most one default per user. Service layer
     // does atomic clear-then-set so this is the safety net.
-    uniqueIndex("idx_model_cards_default").on(t.tenant_id).where(sql`"is_default" = 1`),
-    index("idx_model_cards_tenant").on(t.tenant_id, t.created_at),
-    index("idx_model_cards_tenant_created_id").on(t.tenant_id, t.created_at, t.id),
+    uniqueIndex("idx_model_cards_default").on(t.user_id).where(sql`"is_default" = 1`),
+    index("idx_model_cards_user").on(t.user_id, t.created_at),
+    index("idx_model_cards_user_created_id").on(t.user_id, t.created_at, t.id),
   ],
 );

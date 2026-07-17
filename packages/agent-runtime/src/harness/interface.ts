@@ -169,13 +169,13 @@ export interface HarnessContext {
    */
   session_id?: string;
   /**
-   * The OMA tenant id this session belongs to. Optional during the
-   * transition — AcpProxyHarness uses it to forward `x-harness-tenant` to
-   * RuntimeRoom so the daemon receives the right `tenant_id` on every
-   * session-scoped frame (step 2 of multi-tenant CLI bridge daemon). Other
-   * harnesses ignore it. SessionDO populates this from its `state.tenant_id`.
+   * The OMA user id this session belongs to. Optional during the
+   * transition — AcpProxyHarness uses it to forward `x-harness-user` to
+   * RuntimeRoom so the daemon receives the right `user_id` on every
+   * session-scoped frame (step 2 of multi-user CLI bridge daemon). Other
+   * harnesses ignore it. SessionDO populates this from its `state.user_id`.
    */
-  tenant_id?: string;
+  user_id?: string;
 
   /** Platform-prepared tools: built from agent config, ready to pass to generateText. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -218,7 +218,7 @@ export interface HarnessContext {
    * `source.type === "file"`) into inline bytes + media type + filename for
    * the next derive cycle. SessionDO populates this with a
    * `services.files.get` + R2 fetch composition scoped to the session's
-   * tenant; sub-agents and tests may leave it undefined, in which case the
+   * user; sub-agents and tests may leave it undefined, in which case the
    * sync projection runs and file_id sources collapse to placeholder text.
    *
    * Idempotent failure: returning `null` is the contract for "couldn't
@@ -246,10 +246,10 @@ export interface HarnessContext {
     /** LLM full-body logging context. When set, the harness wraps each
      *  model call in middleware that PUTs request + response to R2 keyed
      *  by the per-step span event id. SessionDO populates this with the
-     *  session's tenant + id and the FILES_BUCKET binding. Absent in
+     *  session's user + id and the FILES_BUCKET binding. Absent in
      *  test harnesses / non-CF deploys → middleware no-op. */
     llmLog?: {
-      tenant_id: string;
+      user_id: string;
       session_id: string;
       r2: R2Bucket | null;
     };

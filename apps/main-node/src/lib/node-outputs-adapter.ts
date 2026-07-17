@@ -6,14 +6,17 @@
 
 import { createReadStream } from "node:fs";
 import { stat as fsStat, readdir as fsReaddir, rm as fsRm } from "node:fs/promises";
-import { join, resolve as resolvePath } from "node:path";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { guessSessionOutputMime } from "@open-managed-agents/shared";
+import { createUserDataLayout } from "./user-data-layout.js";
 
 export function nodeOutputsAdapter(outputsRoot: string) {
+  const layout = createUserDataLayout(outputsRoot);
+  const outputDir = (userId: string, sessionId: string) => layout.outputsRoot(userId, sessionId);
   return {
-    async list(tenantId: string, sessionId: string) {
-      const dir = resolvePath(outputsRoot, tenantId, sessionId);
+    async list(userId: string, sessionId: string) {
+      const dir = outputDir(userId, sessionId);
       let entries: string[];
       try {
         entries = await fsReaddir(dir);
@@ -43,8 +46,8 @@ export function nodeOutputsAdapter(outputsRoot: string) {
       }
       return out;
     },
-    async read(tenantId: string, sessionId: string, filename: string) {
-      const full = join(resolvePath(outputsRoot, tenantId, sessionId), filename);
+    async read(userId: string, sessionId: string, filename: string) {
+      const full = join(outputDir(userId, sessionId), filename);
       let st;
       try {
         st = await fsStat(full);
@@ -61,8 +64,8 @@ export function nodeOutputsAdapter(outputsRoot: string) {
         contentType: guessSessionOutputMime(filename),
       };
     },
-    async deleteAll(tenantId: string, sessionId: string) {
-      const dir = resolvePath(outputsRoot, tenantId, sessionId);
+    async deleteAll(userId: string, sessionId: string) {
+      const dir = outputDir(userId, sessionId);
       await fsRm(dir, { recursive: true, force: true }).catch(() => undefined);
     },
   };

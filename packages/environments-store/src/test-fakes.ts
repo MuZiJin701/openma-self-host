@@ -17,7 +17,7 @@ import type { EnvironmentRow, EnvironmentStatus } from "./types";
 
 interface InMemEnvironment {
   id: string;
-  tenant_id: string;
+  user_id: string;
   name: string;
   description: string | null;
   status: EnvironmentStatus;
@@ -38,7 +38,7 @@ export class InMemoryEnvironmentRepo implements EnvironmentRepo {
   async insert(input: NewEnvironmentInput): Promise<EnvironmentRow> {
     const row: InMemEnvironment = {
       id: input.id,
-      tenant_id: input.tenantId,
+      user_id: input.userId,
       name: input.name,
       description: input.description,
       status: input.status,
@@ -57,27 +57,27 @@ export class InMemoryEnvironmentRepo implements EnvironmentRepo {
   }
 
   async get(
-    tenantId: string,
+    userId: string,
     environmentId: string,
   ): Promise<EnvironmentRow | null> {
     const row = this.byId.get(environmentId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return toRow(row);
   }
 
   async list(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<EnvironmentRow[]> {
     return Array.from(this.byId.values())
-      .filter((r) => r.tenant_id === tenantId)
+      .filter((r) => r.user_id === userId)
       .filter((r) => opts.includeArchived || r.archived_at === null)
       .sort((a, b) => a.created_at - b.created_at)
       .map(toRow);
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       status?: "active" | "archived" | "any";
       includeArchived: boolean;
@@ -90,7 +90,7 @@ export class InMemoryEnvironmentRepo implements EnvironmentRepo {
   ): Promise<{ items: EnvironmentRow[]; hasMore: boolean }> {
     const qLower = opts.q?.toLowerCase();
     let rows = Array.from(this.byId.values())
-      .filter((r) => r.tenant_id === tenantId)
+      .filter((r) => r.user_id === userId)
       .filter((r) => {
         if (opts.status === "active") return r.archived_at === null;
         if (opts.status === "archived") return r.archived_at !== null;
@@ -122,22 +122,22 @@ export class InMemoryEnvironmentRepo implements EnvironmentRepo {
   }
 
   async count(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<number> {
     return Array.from(this.byId.values())
-      .filter((r) => r.tenant_id === tenantId)
+      .filter((r) => r.user_id === userId)
       .filter((r) => opts.includeArchived || r.archived_at === null)
       .length;
   }
 
   async update(
-    tenantId: string,
+    userId: string,
     environmentId: string,
     update: EnvironmentUpdateFields,
   ): Promise<EnvironmentRow> {
     const row = this.byId.get(environmentId);
-    if (!row || row.tenant_id !== tenantId) {
+    if (!row || row.user_id !== userId) {
       throw new EnvironmentNotFoundError();
     }
     if (update.name !== undefined) row.name = update.name;
@@ -156,12 +156,12 @@ export class InMemoryEnvironmentRepo implements EnvironmentRepo {
   }
 
   async archive(
-    tenantId: string,
+    userId: string,
     environmentId: string,
     archivedAt: number,
   ): Promise<EnvironmentRow> {
     const row = this.byId.get(environmentId);
-    if (!row || row.tenant_id !== tenantId) {
+    if (!row || row.user_id !== userId) {
       throw new EnvironmentNotFoundError();
     }
     row.archived_at = archivedAt;
@@ -169,9 +169,9 @@ export class InMemoryEnvironmentRepo implements EnvironmentRepo {
     return toRow(row);
   }
 
-  async delete(tenantId: string, environmentId: string): Promise<void> {
+  async delete(userId: string, environmentId: string): Promise<void> {
     const row = this.byId.get(environmentId);
-    if (!row || row.tenant_id !== tenantId) return;
+    if (!row || row.user_id !== userId) return;
     this.byId.delete(environmentId);
   }
 }
@@ -227,7 +227,7 @@ export function createInMemoryEnvironmentService(opts?: {
 function toRow(e: InMemEnvironment): EnvironmentRow {
   return {
     id: e.id,
-    tenant_id: e.tenant_id,
+    user_id: e.user_id,
     name: e.name,
     description: e.description,
     status: e.status,

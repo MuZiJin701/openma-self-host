@@ -11,10 +11,6 @@ export interface ClientOptions {
    *  OpenManagedAgents-SDK; some hardened deployments (Cloudflare bot
    *  fight) require a Mozilla-style UA — pass that here if you hit 1010. */
   userAgent?: string;
-  /** Active tenant id. Sent as `x-active-tenant`; the backend validates
-   *  membership. Only useful for cookie-auth users on multi-tenant
-   *  workspaces. API-key users authenticate as the key's tenant. */
-  activeTenantId?: string;
   /** Custom fetch — useful for tests, proxies, or runtimes where the
    *  global fetch is missing. Defaults to `globalThis.fetch`. */
   fetch?: typeof fetch;
@@ -53,7 +49,6 @@ export class Client {
         ?? "Mozilla/5.0 (compatible; OpenManagedAgents-SDK/0.1; +https://openma.dev)",
       ...(opts.apiKey ? { "x-api-key": opts.apiKey } : {}),
       ...(opts.bearer ? { authorization: `Bearer ${opts.bearer}` } : {}),
-      ...(opts.activeTenantId ? { "x-active-tenant": opts.activeTenantId } : {}),
     };
   }
 

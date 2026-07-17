@@ -7,7 +7,7 @@ export const sessions = pgTable(
   "sessions",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     // Mirror packages/schema/src/index.ts which leaves agent_id /
     // environment_id NULLABLE on the Node-PG path. CF SQLite forces
     // NOT NULL — Phase 3 reconciliation will pick a winner.
@@ -27,11 +27,11 @@ export const sessions = pgTable(
     terminated_at: bigint("terminated_at", { mode: "number" }),
   },
   (t) => [
-    index("idx_sessions_status").on(t.status, t.tenant_id),
-    index("idx_sessions_tenant_archived").on(t.tenant_id, t.archived_at),
-    index("idx_sessions_running").on(t.tenant_id, t.id).where(sql`"status" = 'running'`),
+    index("idx_sessions_status").on(t.status, t.user_id),
+    index("idx_sessions_user_archived").on(t.user_id, t.archived_at),
+    index("idx_sessions_running").on(t.user_id, t.id).where(sql`"status" = 'running'`),
     index("idx_sessions_terminated")
-      .on(t.tenant_id, t.terminated_at)
+      .on(t.user_id, t.terminated_at)
       .where(sql`"terminated_at" IS NOT NULL`),
   ],
 );

@@ -25,7 +25,7 @@ export interface NodeSessionLifecycleDeps {
 export function nodeSessionLifecycle(deps: NodeSessionLifecycleDeps): SessionLifecycleHooks {
   return {
     promoteSandboxFile: async ({
-      tenantId,
+      userId,
       sessionId,
       sandboxPath,
       filename,
@@ -34,13 +34,13 @@ export function nodeSessionLifecycle(deps: NodeSessionLifecycleDeps): SessionLif
       bytes,
     }) => {
       const newFileId = generateFileId();
-      const blobKey = fileR2Key(tenantId, newFileId);
+      const blobKey = fileR2Key(userId, newFileId);
       await deps.filesBlob.put(blobKey, bytes, {
         httpMetadata: { contentType: mediaType },
       });
       const row = await deps.files.create({
         id: newFileId,
-        tenantId,
+        userId,
         sessionId,
         filename,
         mediaType,
@@ -51,10 +51,10 @@ export function nodeSessionLifecycle(deps: NodeSessionLifecycleDeps): SessionLif
       void sandboxPath;
       return toFileRecord(row);
     },
-    fileExists: async ({ tenantId, fileId }) => {
-      return (await deps.files.get({ tenantId, fileId })) !== null;
+    fileExists: async ({ userId, fileId }) => {
+      return (await deps.files.get({ userId, fileId })) !== null;
     },
-    cascadeDeleteFiles: async ({ tenantId, sessionId }) => {
+    cascadeDeleteFiles: async ({ userId, sessionId }) => {
       try {
         const orphans = await deps.files.deleteBySession({ sessionId });
         if (!orphans.length) return;
@@ -65,7 +65,7 @@ export function nodeSessionLifecycle(deps: NodeSessionLifecycleDeps): SessionLif
                 {
                   op: "session.delete.blob_cleanup",
                   session_id: sessionId,
-                  tenant_id: tenantId,
+                  user_id: userId,
                   blob_key: f.r2_key,
                   err,
                 },
@@ -79,7 +79,7 @@ export function nodeSessionLifecycle(deps: NodeSessionLifecycleDeps): SessionLif
           {
             op: "session.delete.metadata_cleanup",
             session_id: sessionId,
-            tenant_id: tenantId,
+            user_id: userId,
             err,
           },
           "files metadata cleanup failed",

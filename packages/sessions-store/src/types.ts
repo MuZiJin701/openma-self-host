@@ -13,7 +13,7 @@
 //   - The actual secret values for `env.value` (legacy: `env_secret.value`)
 //     are NOT stored here — they
 //     continue to live in CONFIG_KV under
-//     `t:{tenant}:secret:{session}:{resource}` keys, owned by the route layer
+//     `t:{user}:secret:{session}:{resource}` keys, owned by the route layer
 //     (sessions.ts:361/374, internal.ts:315). This store is intentionally
 //     write-once for resource metadata only.
 
@@ -26,7 +26,7 @@ import type {
 
 export interface SessionRow {
   id: string;
-  tenant_id: string;
+  user_id: string;
   agent_id: string | null;
   environment_id: string | null;
   title: string;

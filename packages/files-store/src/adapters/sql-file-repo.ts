@@ -38,7 +38,7 @@ export class SqlFileRepo implements FileRepo {
     await runOnce(
       this.db.insert(files).values({
         id: input.id,
-        tenant_id: input.tenantId,
+        user_id: input.userId,
         session_id: input.sessionId,
         scope: input.scope,
         filename: input.filename,
@@ -49,23 +49,23 @@ export class SqlFileRepo implements FileRepo {
         created_at: input.createdAt,
       }),
     );
-    const row = await this.get(input.tenantId, input.id);
+    const row = await this.get(input.userId, input.id);
     if (!row) throw new Error("file vanished after insert");
     return row;
   }
 
-  async get(tenantId: string, fileId: string): Promise<FileRow | null> {
+  async get(userId: string, fileId: string): Promise<FileRow | null> {
     const row = await getOne<typeof files.$inferSelect>(
       this.db
         .select()
         .from(files)
-        .where(and(eq(files.id, fileId), eq(files.tenant_id, tenantId))),
+        .where(and(eq(files.id, fileId), eq(files.user_id, userId))),
     );
     return row ? toRow(row) : null;
   }
 
-  async list(tenantId: string, opts: FileListOptions): Promise<FileRow[]> {
-    const conds = [eq(files.tenant_id, tenantId)];
+  async list(userId: string, opts: FileListOptions): Promise<FileRow[]> {
+    const conds = [eq(files.user_id, userId)];
     if (opts.sessionId !== undefined) {
       conds.push(eq(files.session_id, opts.sessionId));
     }
@@ -87,14 +87,14 @@ export class SqlFileRepo implements FileRepo {
     return rows.map(toRow);
   }
 
-  async delete(tenantId: string, fileId: string): Promise<FileRow | null> {
+  async delete(userId: string, fileId: string): Promise<FileRow | null> {
     // Read first so we can return the row (caller needs r2_key for R2 delete).
     // Using a separate SELECT + DELETE is fine — files-store has no contention
     // semantics that would make a RETURNING-style atomicity matter here.
-    const existing = await this.get(tenantId, fileId);
+    const existing = await this.get(userId, fileId);
     if (!existing) return null;
     await runOnce(
-      this.db.delete(files).where(and(eq(files.id, fileId), eq(files.tenant_id, tenantId))),
+      this.db.delete(files).where(and(eq(files.id, fileId), eq(files.user_id, userId))),
     );
     return existing;
   }
@@ -115,18 +115,18 @@ export class SqlFileRepo implements FileRepo {
 function toRow(r: typeof files.$inferSelect): FileRow {
   return {
     id: r.id,
-    tenant_id: r.tenant_id,
+    user_id: r.user_id,
     session_id: r.session_id,
     scope: r.scope as FileScope,
     filename: r.filename,
     media_type: r.media_type,
     size_bytes: r.size_bytes,
-    downloadable: r.downloadable === 1,
+    downloadable: Number(r.downloadable) === 1,
     r2_key: r.r2_key,
     created_at: msToIso(r.created_at),
   };
 }
 
-function msToIso(ms: number): string {
-  return new Date(ms).toISOString();
+function msToIso(ms: number | string): string {
+  return new Date(Number(ms)).toISOString();
 }

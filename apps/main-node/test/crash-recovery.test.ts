@@ -69,9 +69,9 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
       env: {
         ...process.env,
         PORT: String(port),
+        DATA_DIR: opts.dataDir,
         DATABASE_PATH: join(opts.dataDir, "oma.db"),
         AUTH_DATABASE_PATH: join(opts.dataDir, "auth.db"),
-        SANDBOX_WORKDIR: join(opts.dataDir, "sandboxes"),
         AUTH_DISABLED: "1",
         BETTER_AUTH_SECRET: "test-secret-only-for-vitest-do-not-deploy",
         // Quiet — too much log noise in test output otherwise.
@@ -187,11 +187,11 @@ describe("main-node crash recovery (real process, SIGKILL)", () => {
     const dbPath = join(dataDir, "oma.db");
     {
       const db = new Database(dbPath);
-      // Seed: AUTH_DISABLED mode means tenant_id is the literal string
+      // Seed: AUTH_DISABLED mode means user_id is the literal string
       // "default"; agents/sessions are scoped to that.
       const now = Date.now();
       db.prepare(
-        `INSERT INTO sessions (id, tenant_id, agent_id, status, turn_id, turn_started_at, created_at, updated_at)
+        `INSERT INTO sessions (id, user_id, agent_id, status, turn_id, turn_started_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         "sess_orphan",
@@ -243,7 +243,7 @@ describe("main-node crash recovery (real process, SIGKILL)", () => {
       const db = new Database(dbPath);
       const now = Date.now();
       const insert = db.prepare(
-        `INSERT INTO sessions (id, tenant_id, agent_id, status, turn_id, turn_started_at, created_at, updated_at)
+        `INSERT INTO sessions (id, user_id, agent_id, status, turn_id, turn_started_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (let i = 0; i < 3; i++) {
@@ -285,7 +285,7 @@ describe("main-node crash recovery (real process, SIGKILL)", () => {
       const now = Date.now();
       // Seed a clean idle session — no turn_id, no recovery needed.
       db.prepare(
-        `INSERT INTO sessions (id, tenant_id, agent_id, status, created_at, updated_at)
+        `INSERT INTO sessions (id, user_id, agent_id, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       ).run("sess_clean", "default", null, "idle", now, now);
       db.close();
@@ -544,7 +544,7 @@ describe("main-node crash recovery (real process, SIGKILL)", () => {
       const now = Date.now();
       // Clean idle — no recovery needed.
       db.prepare(
-        `INSERT INTO sessions (id, tenant_id, agent_id, status, created_at, updated_at)
+        `INSERT INTO sessions (id, user_id, agent_id, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       ).run("sess_clean", "default", null, "idle", now, now);
       // Orphan with stuck stream.
@@ -563,7 +563,7 @@ describe("main-node crash recovery (real process, SIGKILL)", () => {
       });
       // Another clean idle.
       db.prepare(
-        `INSERT INTO sessions (id, tenant_id, agent_id, status, created_at, updated_at)
+        `INSERT INTO sessions (id, user_id, agent_id, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       ).run("sess_clean2", "default", null, "idle", now, now);
       db.close();
@@ -664,7 +664,7 @@ function seedOrphanSession(
 ): void {
   db.prepare(
     `INSERT INTO sessions
-       (id, tenant_id, agent_id, status, turn_id, turn_started_at, created_at, updated_at)
+       (id, user_id, agent_id, status, turn_id, turn_started_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(sessionId, "default", null, "running", turnId, startedAt, startedAt, startedAt);
 }

@@ -1,7 +1,7 @@
 // Smoke test for POST /v1/sessions/:id/files (sandbox path → file_id
 // promotion) on Node.
 //
-// Spawns main-node, creates a tenant + agent + session, writes a file
+// Spawns main-node, creates a user + agent + session, writes a file
 // inside the sandbox via /exec, then calls /sessions/:id/files. Verifies
 // the response is 201 with a valid file_id, and that GET /v1/files/:id
 // returns the metadata.
@@ -35,11 +35,9 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
     env: {
       ...process.env,
       PORT: String(port),
+      DATA_DIR: opts.dataDir,
       DATABASE_PATH: join(opts.dataDir, "oma.db"),
       AUTH_DATABASE_PATH: join(opts.dataDir, "auth.db"),
-      SANDBOX_WORKDIR: join(opts.dataDir, "sandboxes"),
-      FILES_BLOB_DIR: join(opts.dataDir, "files-blobs"),
-      SESSION_OUTPUTS_DIR: join(opts.dataDir, "outputs"),
       AUTH_DISABLED: "1",
       BETTER_AUTH_SECRET: "test-secret-only-for-vitest",
       PLATFORM_ROOT_SECRET: "test-platform-root-secret-for-vitest",
@@ -116,7 +114,7 @@ describe("Node POST /v1/sessions/:id/files (promoteSandboxFile)", () => {
     h = await startMainNode({ dataDir });
     const base = `http://localhost:${h.port}/v1`;
 
-    // 1. Configure the model card required by the tenant-scoped API.
+    // 1. Configure the model card required by the user-scoped API.
     const cardRes = await fetch(`${base}/model_cards`, {
       method: "POST",
       headers: { "content-type": "application/json" },

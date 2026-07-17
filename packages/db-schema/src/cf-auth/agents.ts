@@ -15,7 +15,7 @@ export const agents = sqliteTable(
   "agents",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     config: text("config").notNull(),
     version: integer("version").notNull(),
     created_at: integer("created_at").notNull(),
@@ -23,8 +23,8 @@ export const agents = sqliteTable(
     archived_at: integer("archived_at"),
   },
   (t) => [
-    index("idx_agents_tenant").on(t.tenant_id, t.archived_at),
-    index("idx_agents_tenant_created_id").on(t.tenant_id, t.created_at, t.id),
+    index("idx_agents_user").on(t.user_id, t.archived_at),
+    index("idx_agents_user_created_id").on(t.user_id, t.created_at, t.id),
   ],
 );
 
@@ -32,13 +32,13 @@ export const agent_versions = sqliteTable(
   "agent_versions",
   {
     agent_id: text("agent_id").notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     version: integer("version").notNull(),
     snapshot: text("snapshot").notNull(),
     created_at: integer("created_at").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.agent_id, t.version] }),
-    index("idx_agent_versions_tenant_agent").on(t.tenant_id, t.agent_id, t.version),
+    index("idx_agent_versions_user_agent").on(t.user_id, t.agent_id, t.version),
   ],
 );

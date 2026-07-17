@@ -6,7 +6,7 @@
 // Strategy:
 //   - Snapshot: spawn `tar -C <workdir> -cf - .` under the sandbox's
 //     readFileBytes path; pipe to a tar.zst-compressed buffer; upload to
-//     BlobStore key `workspace-backups/<tenant>/<sessionId>/<ts>.tar.zst`.
+//     BlobStore key `workspace-backups/<user>/<sessionId>/<ts>.tar.zst`.
 //     For LocalSubprocess this means tar-ing the workdir directly on
 //     the host — bypasses the SandboxExecutor port for speed/efficiency.
 //     For LiteBox / Daytona / E2B / BoxRun, drive tar through the
@@ -65,24 +65,24 @@ export class NodeWorkspaceBackupService implements WorkspaceBackupService {
 
   async snapshot(input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
     sandbox: SandboxExecutor;
   }): Promise<OrchestratorBackupHandle | null> {
     const tarBytes = await this.tarWorkspace(input.sandbox);
     if (!tarBytes) return null;
     const id = `wsb_${randomBytes(8).toString("hex")}`;
-    const blobKey = `workspace-backups/${input.tenantId}/${input.sessionId}/${id}.tar`;
+    const blobKey = `${encodeURIComponent(input.userId)}/.openma/backups/${encodeURIComponent(input.sessionId)}/${id}.tar`;
     await this.deps.blobs.put(blobKey, tarBytes, {
       httpMetadata: { contentType: "application/x-tar" },
       customMetadata: {
-        tenant_id: input.tenantId,
+        user_id: input.userId,
         session_id: input.sessionId,
       },
     });
     const now = this.nowMs();
     // Schema after apps/main/migrations/0011_workspace_backups.sql:
     //   id              BIGSERIAL PRIMARY KEY  (auto)
-    //   tenant_id       TEXT
+    //   user_id       TEXT
     //   environment_id  TEXT NOT NULL  ← required
     //   backup_handle   TEXT NOT NULL  ← was blob_key in pre-0011 applySchema
     //   created_at, expires_at  BIGINT
@@ -93,11 +93,11 @@ export class NodeWorkspaceBackupService implements WorkspaceBackupService {
     const handleJson = JSON.stringify({ id, dir: blobKey });
     await this.deps.sql
       .prepare(
-        `INSERT INTO workspace_backups (tenant_id, environment_id, backup_handle, created_at, expires_at, source_session_id)
+        `INSERT INTO workspace_backups (user_id, environment_id, backup_handle, created_at, expires_at, source_session_id)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .bind(
-        input.tenantId,
+        input.userId,
         // The backup is logically scoped by session, so use the session id as
         // a synthetic environment key for this legacy backup table column.
         input.sessionId,
@@ -115,7 +115,7 @@ export class NodeWorkspaceBackupService implements WorkspaceBackupService {
 
   async restore(input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
     sandbox: SandboxExecutor;
     handle: OrchestratorBackupHandle;
   }): Promise<{ ok: boolean; error?: string }> {
@@ -129,16 +129,16 @@ export class NodeWorkspaceBackupService implements WorkspaceBackupService {
 
   async latest(input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
   }): Promise<OrchestratorBackupHandle | null> {
     const now = this.nowMs();
     const row = await this.deps.sql
       .prepare(
         `SELECT id, backup_handle FROM workspace_backups
-         WHERE source_session_id = ? AND tenant_id = ? AND expires_at > ?
+         WHERE source_session_id = ? AND user_id = ? AND expires_at > ?
          ORDER BY created_at DESC LIMIT 1`,
       )
-      .bind(input.sessionId, input.tenantId, now)
+      .bind(input.sessionId, input.userId, now)
       .first<{ id: string | number; backup_handle: string }>();
     if (!row) return null;
     try {

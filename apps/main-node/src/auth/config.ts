@@ -5,7 +5,6 @@
 
 import {
   buildBetterAuth,
-  ensureTenantSqlite,
 } from "@open-managed-agents/auth-config";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 
@@ -34,7 +33,6 @@ export function createAuth(opts: CreateAuthOpts): Auth {
     secret: opts.secret ?? randomFallback(),
     baseURL: opts.baseURL,
     cookieDomain: process.env.AUTH_COOKIE_DOMAIN,
-    ensureTenant: (u) => ensureTenantSqlite(opts.mainSql, u.id, u.name, u.email),
   });
   // Cast to the legacy Auth shape — better-auth's generic over options is
   // too narrow for the structural shape we expose externally.

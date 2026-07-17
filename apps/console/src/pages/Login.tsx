@@ -4,18 +4,9 @@ import { authClient } from "../lib/auth-client";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
 import { Logo } from "../components/Logo";
-import { setActiveTenantId } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
 
-// Clear browser-cached tenant pin on every successful auth transition.
-// The pin is per-user — different login → different membership set →
-// the previous user's tenant id is at best meaningless and at worst
-// triggers "Not a member" 403s on every subsequent request.
-// TenantSwitcher repopulates from /v1/me/tenants on next page load.
-function onLoginSuccess(redirect: () => void) {
-  setActiveTenantId(null);
-  redirect();
-}
+function onLoginSuccess(redirect: () => void) { redirect(); }
 
 type Mode =
   | "login"
@@ -72,10 +63,8 @@ export function Login() {
   // Each mode handler below ALSO calls nav(nextUrl) on success; this
   // effect catches anything that fell through.
   //
-  // Subtlety: we DON'T call onLoginSuccess() here because that resets
-  // active tenant — fine when the user just signed in (membership may
-  // have changed) but unwanted when they're just being bounced through
-  // /login with an existing session. Tenant reset is the handlers' job;
+  // Subtlety: we DON'T call onLoginSuccess() here because a redirect-only
+  // safety net should not mutate the authenticated session state.
   // this effect is just a safety net to make sure an authenticated user
   // never gets stranded on the login form.
   //

@@ -18,7 +18,7 @@ import {
   type SqlClient,
 } from "@open-managed-agents/sql-client";
 import { createAuth } from "../src/auth/config.js";
-import { ensureTenantSchema } from "../src/auth/tenants.js";
+import { applyBetterAuthSchema } from "@open-managed-agents/schema";
 
 const PG_URL = process.env.PG_TEST_URL ?? "";
 const enabled =
@@ -31,53 +31,7 @@ let pool: import("pg").Pool;
 beforeAll(async () => {
   if (!enabled) return;
   sql = await createPostgresSqlClient(PG_URL);
-  await ensureTenantSchema(sql);
-  await sql.exec(`
-    CREATE TABLE IF NOT EXISTS "user" (
-      "id" TEXT PRIMARY KEY NOT NULL,
-      "email" TEXT NOT NULL UNIQUE,
-      "emailVerified" BOOLEAN NOT NULL DEFAULT FALSE,
-      "name" TEXT NOT NULL,
-      "image" TEXT,
-      "tenantId" TEXT,
-      "role" TEXT,
-      "createdAt" TIMESTAMPTZ NOT NULL,
-      "updatedAt" TIMESTAMPTZ NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS "session" (
-      "id" TEXT PRIMARY KEY NOT NULL,
-      "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
-      "token" TEXT NOT NULL UNIQUE,
-      "expiresAt" TIMESTAMPTZ NOT NULL,
-      "ipAddress" TEXT,
-      "userAgent" TEXT,
-      "createdAt" TIMESTAMPTZ NOT NULL,
-      "updatedAt" TIMESTAMPTZ NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS "account" (
-      "id" TEXT PRIMARY KEY NOT NULL,
-      "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
-      "accountId" TEXT NOT NULL,
-      "providerId" TEXT NOT NULL,
-      "accessToken" TEXT,
-      "refreshToken" TEXT,
-      "idToken" TEXT,
-      "accessTokenExpiresAt" TIMESTAMPTZ,
-      "refreshTokenExpiresAt" TIMESTAMPTZ,
-      "scope" TEXT,
-      "password" TEXT,
-      "createdAt" TIMESTAMPTZ NOT NULL,
-      "updatedAt" TIMESTAMPTZ NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS "verification" (
-      "id" TEXT PRIMARY KEY NOT NULL,
-      "identifier" TEXT NOT NULL,
-      "value" TEXT NOT NULL,
-      "expiresAt" TIMESTAMPTZ NOT NULL,
-      "createdAt" TIMESTAMPTZ,
-      "updatedAt" TIMESTAMPTZ
-    );
-  `);
+  await applyBetterAuthSchema({ sql, dialect: "postgres" });
   const { Pool } = (await import("pg")) as typeof import("pg");
   pool = new Pool({ connectionString: PG_URL });
 });
@@ -123,15 +77,13 @@ d("better-auth on PG (multi-replica friendly)", () => {
     const signUpBody = await signUp.json().catch(() => ({}));
     expect([200, 201], `unexpected status ${signUp.status}: ${JSON.stringify(signUpBody)}`).toContain(signUp.status);
 
-    // Tenant + membership rows landed on the main store.
-    const memberRows = await sql
+    const userRow = await sql
       .prepare(
-        `SELECT m.tenant_id FROM membership m
-          JOIN "user" u ON u.id = m.user_id WHERE u.email = ?`,
+        `SELECT id FROM "user" WHERE email = ?`,
       )
       .bind(email)
-      .first<{ tenant_id: string }>();
-    expect(memberRows?.tenant_id, "user.create hook should provision a tenant").toBeTruthy();
+      .first<{ id: string }>();
+    expect(userRow?.id).toMatch(/^.+$/);
 
     // Sign-in via replica B confirms the row landed atomically and that
     // betterAuth on a separate instance can read the shared PG schema.

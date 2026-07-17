@@ -5,7 +5,7 @@
 //
 // `services` accepts either a fixed `RouteServices` (Node — services bundle
 // is built once at process start) or a `(c) => RouteServices` callback
-// (CF — services are per-request because of multi-tenant DB resolution).
+// (CF — services are per-request because of multi-user DB resolution).
 
 import type { Context } from "hono";
 import type { AgentService } from "@open-managed-agents/agents-store";
@@ -40,7 +40,7 @@ export interface EventStreamHub {
 
 export interface SessionRegistryLike {
   /** Route an inbound user.message to the harness for this session. */
-  enqueueUserMessage?(sessionId: string, tenantId: string, agentId: string, ev: unknown): void;
+  enqueueUserMessage?(sessionId: string, userId: string, agentId: string, ev: unknown): void;
   /** Trigger user.interrupt — abort the in-flight harness AbortController. */
   interrupt?(sessionId: string): void;
 }
@@ -55,9 +55,9 @@ export interface RouteServices {
   agents: AgentService;
   sessions: SessionService;
   kv: KvStore;
-  /** Node may create a tenant-scoped SQL KV adapter per request. Legacy
+  /** Node may create a user-scoped SQL KV adapter per request. Legacy
    * fixtures can omit this and continue using the fixed `kv` instance. */
-  kvForTenant?: (tenantId: string) => KvStore;
+  kvForUser?: (userId: string) => KvStore;
   /** Per-session event log writer. Bound to a sessionId at the call site. */
   newEventLog: (sessionId: string) => {
     appendAsync(ev: unknown): Promise<void>;
@@ -85,7 +85,7 @@ export interface RouteServices {
 }
 
 /** Per-request services accessor. The Node server passes a callback that resolves
- *  RouteServices off `c.var.services` + `c.var.tenantDb`; Node passes a
+ *  RouteServices off `c.var.services` + `c.var.userDb`; Node passes a
  *  static bundle that the helper turns into a no-arg thunk. Use
  *  `resolveServices` in handlers, never read `deps.services` directly. */
 export type RouteServicesArg = RouteServices | ((c: Context) => RouteServices);
@@ -97,12 +97,12 @@ export function resolveServices(
   return typeof arg === "function" ? arg(c) : arg;
 }
 
-/** Resolve the KV namespace for an authenticated tenant. The fallback keeps
+/** Resolve the KV namespace for an authenticated user. The fallback keeps
  * old route fixtures working while Node moves away from a process-global
- * `default` tenant adapter. */
-export function resolveTenantKv(
-  services: Pick<RouteServices, "kv" | "kvForTenant">,
-  tenantId: string,
+ * `default` user adapter. */
+export function resolveUserKv(
+  services: Pick<RouteServices, "kv" | "kvForUser">,
+  userId: string,
 ): KvStore {
-  return services.kvForTenant?.(tenantId) ?? services.kv;
+  return services.kvForUser?.(userId) ?? services.kv;
 }

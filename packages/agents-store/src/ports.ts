@@ -9,7 +9,7 @@
 // (`deleteWithVersions`) so adapters and the in-memory fake share one
 // canonical implementation.
 //
-// Tenant routing: every method takes `tenantId` as the first argument (or
+// User routing: every method takes `userId` as the first argument (or
 // a top-level field on the input). This is intentional — see
 // packages/credentials-store/src/ports.ts for the rationale.
 
@@ -19,7 +19,7 @@ import type { AgentRow, AgentVersionRow } from "./types";
 
 export interface NewAgentInput {
   id: string;
-  tenantId: string;
+  userId: string;
   /** Full agent config, including version=1 + created_at + updated_at. */
   config: AgentConfig;
   createdAt: number;
@@ -36,19 +36,19 @@ export interface AgentRepo {
   /** Insert a new agent at version 1. */
   insert(input: NewAgentInput): Promise<AgentRow>;
 
-  get(tenantId: string, agentId: string): Promise<AgentRow | null>;
+  get(userId: string, agentId: string): Promise<AgentRow | null>;
 
   /**
-   * Cross-tenant lookup by id — replaces SessionDO's CONFIG_KV fallback at
-   * session-do.ts:185 (which can hit a wrong-tenant key when sandbox-default's
+   * Cross-user lookup by id — replaces SessionDO's CONFIG_KV fallback at
+   * session-do.ts:185 (which can hit a wrong-user key when sandbox-default's
    * KV namespace differs from main's). Used at agent runtime when the snapshot
    * isn't on the DO state.
    */
   getById(agentId: string): Promise<AgentRow | null>;
 
-  /** List agents in a tenant. `includeArchived: false` excludes archived rows. */
+  /** List agents in a user. `includeArchived: false` excludes archived rows. */
   list(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<AgentRow[]>;
 
@@ -65,7 +65,7 @@ export interface AgentRepo {
    * across all filter combinations.
    */
   listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       /** Row archive state. `'active'` → archived_at IS NULL,
        *  `'archived'` → archived_at IS NOT NULL, `'any'` → no filter.
@@ -91,9 +91,9 @@ export interface AgentRepo {
   /**
    * Cheap COUNT(*) for the same row set as `list`. Used by /v1/stats
    * (Dashboard) to avoid pulling rows just to call `.length`. Index
-   * `idx_agents_tenant (tenant_id, archived_at)` covers it.
+   * `idx_agents_user (user_id, archived_at)` covers it.
    */
-  count(tenantId: string, opts: { includeArchived: boolean }): Promise<number>;
+  count(userId: string, opts: { includeArchived: boolean }): Promise<number>;
 
   /**
    * Atomic update: write the prior snapshot to agent_versions AND replace the
@@ -101,14 +101,14 @@ export interface AgentRepo {
    * history then KV.put current at agents.ts:251 + 276).
    */
   updateWithVersionSnapshot(
-    tenantId: string,
+    userId: string,
     agentId: string,
     update: AgentUpdateFields,
     priorSnapshot: AgentVersionSnapshotInput,
   ): Promise<AgentRow>;
 
   archive(
-    tenantId: string,
+    userId: string,
     agentId: string,
     archivedAt: number,
   ): Promise<AgentRow>;
@@ -117,17 +117,17 @@ export interface AgentRepo {
    * Hard-delete the agent AND cascade-delete every history row in the same
    * batch. Replaces the legacy "kvListAll versions then loop delete" pattern.
    */
-  deleteWithVersions(tenantId: string, agentId: string): Promise<void>;
+  deleteWithVersions(userId: string, agentId: string): Promise<void>;
 
   // ── agent_versions operations ──
 
   /** All historical snapshots for an agent (excludes the current version). */
-  listVersions(tenantId: string, agentId: string): Promise<AgentVersionRow[]>;
+  listVersions(userId: string, agentId: string): Promise<AgentVersionRow[]>;
 
   /** A specific historical snapshot. Returns null when the version is the
    *  current one (matching legacy KV semantics — current lives in `agents`). */
   getVersion(
-    tenantId: string,
+    userId: string,
     agentId: string,
     version: number,
   ): Promise<AgentVersionRow | null>;
@@ -136,7 +136,7 @@ export interface AgentRepo {
 /** Append-only snapshot row — the service writes one per update via `updateWithVersionSnapshot`. */
 export interface AgentVersionSnapshotInput {
   agentId: string;
-  tenantId: string;
+  userId: string;
   version: number;
   /** Full AgentConfig as it was at this version. */
   snapshot: AgentConfig;

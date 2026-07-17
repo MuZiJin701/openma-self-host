@@ -7,12 +7,12 @@ import {
 } from "@open-managed-agents/environments-store";
 
 function toApiShape(row: EnvironmentRow) {
-  const { tenant_id: _tenant, ...publicRow } = row;
+  const { user_id: _user, ...publicRow } = row;
   return publicRow;
 }
 
 export function buildEnvironmentRoutes(deps: { environments: EnvironmentService }) {
-  const app = new Hono<{ Variables: { tenant_id: string } }>();
+  const app = new Hono<{ Variables: { user_id: string } }>();
 
   const unsupported = (c: Context, id: string) =>
     c.json({ error: "environment_not_supported", environment_id: id }, 501);
@@ -31,7 +31,7 @@ export function buildEnvironmentRoutes(deps: { environments: EnvironmentService 
     const config = body.config ?? { type: "local" };
     if (!isLocalRuntimeConfig(config)) return unsupported(c, "env-cloud");
     const row = await deps.environments.create({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       name: body.name,
       description: body.description,
       config: config as never,
@@ -43,7 +43,7 @@ export function buildEnvironmentRoutes(deps: { environments: EnvironmentService 
 
   app.get("/", async (c) => {
     const rows = await deps.environments.list({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       includeArchived: false,
     });
     return c.json({ data: rows.filter((row) => isLocalRuntimeConfig(row.config)).map(toApiShape) });
@@ -51,7 +51,7 @@ export function buildEnvironmentRoutes(deps: { environments: EnvironmentService 
 
   app.get("/:id", async (c) => {
     const id = c.req.param("id");
-    const row = await deps.environments.get({ tenantId: c.var.tenant_id, environmentId: id });
+    const row = await deps.environments.get({ userId: c.var.user_id, environmentId: id });
     if (!row) return c.json({ error: "Environment not found" }, 404);
     if (!isLocalRuntimeConfig(row.config)) return unsupported(c, id);
     return c.json(toApiShape(row));
@@ -70,10 +70,10 @@ export function buildEnvironmentRoutes(deps: { environments: EnvironmentService 
       return unsupported(c, "env-cloud");
     }
     try {
-      const existing = await deps.environments.get({ tenantId: c.var.tenant_id, environmentId: id });
+      const existing = await deps.environments.get({ userId: c.var.user_id, environmentId: id });
       if (existing && !isLocalRuntimeConfig(existing.config)) return unsupported(c, id);
       const row = await deps.environments.update({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         environmentId: id,
         name: body.name,
         description: body.description,
@@ -91,7 +91,7 @@ export function buildEnvironmentRoutes(deps: { environments: EnvironmentService 
   app.post("/:id/archive", async (c) => {
     const id = c.req.param("id");
     try {
-      const row = await deps.environments.archive({ tenantId: c.var.tenant_id, environmentId: id });
+      const row = await deps.environments.archive({ userId: c.var.user_id, environmentId: id });
       return c.json(toApiShape(row));
     } catch (error) {
       if (error instanceof EnvironmentNotFoundError) return c.json({ error: "Environment not found" }, 404);
@@ -102,7 +102,7 @@ export function buildEnvironmentRoutes(deps: { environments: EnvironmentService 
   app.delete("/:id", async (c) => {
     const id = c.req.param("id");
     try {
-      await deps.environments.delete({ tenantId: c.var.tenant_id, environmentId: id });
+      await deps.environments.delete({ userId: c.var.user_id, environmentId: id });
       return c.json({ type: "environment_deleted", id });
     } catch (error) {
       if (error instanceof EnvironmentNotFoundError) return c.json({ error: "Environment not found" }, 404);

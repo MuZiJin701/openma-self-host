@@ -52,7 +52,7 @@ export class SqlSessionRepo implements SessionRepo {
   ): Promise<{ session: SessionRow; resources: SessionResourceRow[] }> {
     const insertSessionQ = this.db.insert(sessions).values({
       id: session.id,
-      tenant_id: session.tenantId,
+      user_id: session.userId,
       agent_id: session.agentId,
       environment_id: session.environmentId,
       title: session.title,
@@ -73,7 +73,7 @@ export class SqlSessionRepo implements SessionRepo {
     }
     await atomicWrite(this.db, queries);
 
-    const inserted = await this.get(session.tenantId, session.id);
+    const inserted = await this.get(session.userId, session.id);
     if (!inserted) throw new Error("session vanished after insertWithResources");
     const insertedResources = resources.length
       ? await this.listResources(session.id)
@@ -81,12 +81,12 @@ export class SqlSessionRepo implements SessionRepo {
     return { session: inserted, resources: insertedResources };
   }
 
-  async get(tenantId: string, sessionId: string): Promise<SessionRow | null> {
+  async get(userId: string, sessionId: string): Promise<SessionRow | null> {
     const row = await getOne<typeof sessions.$inferSelect>(
       this.db
         .select()
         .from(sessions)
-        .where(and(eq(sessions.id, sessionId), eq(sessions.tenant_id, tenantId))),
+        .where(and(eq(sessions.id, sessionId), eq(sessions.user_id, userId))),
     );
     return row ? toSessionRow(row) : null;
   }
@@ -98,8 +98,8 @@ export class SqlSessionRepo implements SessionRepo {
     return row ? toSessionRow(row) : null;
   }
 
-  async list(tenantId: string, opts: SessionListOptions): Promise<SessionRow[]> {
-    const conds = [eq(sessions.tenant_id, tenantId)];
+  async list(userId: string, opts: SessionListOptions): Promise<SessionRow[]> {
+    const conds = [eq(sessions.user_id, userId)];
     if (opts.agentId) conds.push(eq(sessions.agent_id, opts.agentId));
     if (!opts.includeArchived) conds.push(isNull(sessions.archived_at));
     const orderColumn =
@@ -116,7 +116,7 @@ export class SqlSessionRepo implements SessionRepo {
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       agentId?: string;
       includeArchived: boolean;
@@ -126,7 +126,7 @@ export class SqlSessionRepo implements SessionRepo {
       q?: string;
     },
   ): Promise<{ items: SessionRow[]; hasMore: boolean }> {
-    const conds = [eq(sessions.tenant_id, tenantId)];
+    const conds = [eq(sessions.user_id, userId)];
     if (opts.agentId) conds.push(eq(sessions.agent_id, opts.agentId));
     if (!opts.includeArchived) conds.push(isNull(sessions.archived_at));
     if (opts.status) conds.push(eq(sessions.status, opts.status));
@@ -157,14 +157,14 @@ export class SqlSessionRepo implements SessionRepo {
     return trimPage(rows.map(toSessionRow), opts.limit);
   }
 
-  async hasActiveByAgent(tenantId: string, agentId: string): Promise<boolean> {
+  async hasActiveByAgent(userId: string, agentId: string): Promise<boolean> {
     const row = await getOne<{ one: number }>(
       this.db
         .select({ one: sql<number>`1` })
         .from(sessions)
         .where(
           and(
-            eq(sessions.tenant_id, tenantId),
+            eq(sessions.user_id, userId),
             eq(sessions.agent_id, agentId),
             isNull(sessions.archived_at),
           ),
@@ -175,7 +175,7 @@ export class SqlSessionRepo implements SessionRepo {
   }
 
   async hasActiveByEnvironment(
-    tenantId: string,
+    userId: string,
     environmentId: string,
   ): Promise<boolean> {
     const row = await getOne<{ one: number }>(
@@ -184,7 +184,7 @@ export class SqlSessionRepo implements SessionRepo {
         .from(sessions)
         .where(
           and(
-            eq(sessions.tenant_id, tenantId),
+            eq(sessions.user_id, userId),
             eq(sessions.environment_id, environmentId),
             isNull(sessions.archived_at),
           ),
@@ -195,10 +195,10 @@ export class SqlSessionRepo implements SessionRepo {
   }
 
   async count(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<number> {
-    const conds = [eq(sessions.tenant_id, tenantId)];
+    const conds = [eq(sessions.user_id, userId)];
     if (!opts.includeArchived) conds.push(isNull(sessions.archived_at));
     const row = await getOne<{ c: number }>(
       this.db
@@ -210,7 +210,7 @@ export class SqlSessionRepo implements SessionRepo {
   }
 
   async update(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     update: SessionUpdateFields,
   ): Promise<SessionRow> {
@@ -234,15 +234,15 @@ export class SqlSessionRepo implements SessionRepo {
       this.db
         .update(sessions)
         .set(set)
-        .where(and(eq(sessions.id, sessionId), eq(sessions.tenant_id, tenantId))),
+        .where(and(eq(sessions.id, sessionId), eq(sessions.user_id, userId))),
     );
-    const row = await this.get(tenantId, sessionId);
+    const row = await this.get(userId, sessionId);
     if (!row) throw new SessionNotFoundError();
     return row;
   }
 
   async archive(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     archivedAt: number,
   ): Promise<SessionRow> {
@@ -250,32 +250,32 @@ export class SqlSessionRepo implements SessionRepo {
       this.db
         .update(sessions)
         .set({ archived_at: archivedAt, updated_at: archivedAt })
-        .where(and(eq(sessions.id, sessionId), eq(sessions.tenant_id, tenantId))),
+        .where(and(eq(sessions.id, sessionId), eq(sessions.user_id, userId))),
     );
-    const row = await this.get(tenantId, sessionId);
+    const row = await this.get(userId, sessionId);
     if (!row) throw new SessionNotFoundError();
     return row;
   }
 
-  async deleteWithResources(tenantId: string, sessionId: string): Promise<void> {
+  async deleteWithResources(userId: string, sessionId: string): Promise<void> {
     // Two-statement batch: drop resources first then the session row.
     const deleteResourcesQ = this.db
       .delete(session_resources)
       .where(eq(session_resources.session_id, sessionId));
     const deleteSessionQ = this.db
       .delete(sessions)
-      .where(and(eq(sessions.id, sessionId), eq(sessions.tenant_id, tenantId)));
+      .where(and(eq(sessions.id, sessionId), eq(sessions.user_id, userId)));
     await atomicWrite(this.db, [deleteResourcesQ, deleteSessionQ]);
   }
 
-  async deleteByAgent(tenantId: string, agentId: string): Promise<number> {
+  async deleteByAgent(userId: string, agentId: string): Promise<number> {
     // Discover session ids first so the resource cascade hits the right rows
     // and so the caller gets a deletion count.
     const ids = await getAll<{ id: string }>(
       this.db
         .select({ id: sessions.id })
         .from(sessions)
-        .where(and(eq(sessions.tenant_id, tenantId), eq(sessions.agent_id, agentId))),
+        .where(and(eq(sessions.user_id, userId), eq(sessions.agent_id, agentId))),
     );
     const sessionIds = ids.map((r) => r.id);
     if (!sessionIds.length) return 0;
@@ -285,7 +285,7 @@ export class SqlSessionRepo implements SessionRepo {
       .where(inArray(session_resources.session_id, sessionIds));
     const deleteSessionsQ = this.db
       .delete(sessions)
-      .where(and(eq(sessions.tenant_id, tenantId), eq(sessions.agent_id, agentId)));
+      .where(and(eq(sessions.user_id, userId), eq(sessions.agent_id, agentId)));
     await atomicWrite(this.db, [deleteResourcesQ, deleteSessionsQ]);
     return sessionIds.length;
   }
@@ -412,7 +412,7 @@ function resourceInsertQuery(db: OmaDbBuilder, r: NewSessionResourceInput) {
 function toSessionRow(r: typeof sessions.$inferSelect): SessionRow {
   return {
     id: r.id,
-    tenant_id: r.tenant_id,
+    user_id: r.user_id,
     agent_id: r.agent_id,
     environment_id: r.environment_id,
     title: r.title,
@@ -446,6 +446,6 @@ function toResourceRow(r: typeof session_resources.$inferSelect): SessionResourc
   };
 }
 
-function msToIso(ms: number): string {
-  return new Date(ms).toISOString();
+function msToIso(ms: number | string): string {
+  return new Date(Number(ms)).toISOString();
 }

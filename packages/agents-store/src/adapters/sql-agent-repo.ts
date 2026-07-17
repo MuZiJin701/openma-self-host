@@ -55,24 +55,24 @@ export class SqlAgentRepo implements AgentRepo {
     await runOnce(
       this.db.insert(agents).values({
         id: input.id,
-        tenant_id: input.tenantId,
+        user_id: input.userId,
         config: JSON.stringify(input.config),
         version: input.config.version,
         created_at: input.createdAt,
         updated_at: input.createdAt,
       }),
     );
-    const row = await this.get(input.tenantId, input.id);
+    const row = await this.get(input.userId, input.id);
     if (!row) throw new Error("agent vanished after insert");
     return row;
   }
 
-  async get(tenantId: string, agentId: string): Promise<AgentRow | null> {
+  async get(userId: string, agentId: string): Promise<AgentRow | null> {
     const row = await getOne<typeof agents.$inferSelect>(
       this.db
         .select()
         .from(agents)
-        .where(and(eq(agents.id, agentId), eq(agents.tenant_id, tenantId))),
+        .where(and(eq(agents.id, agentId), eq(agents.user_id, userId))),
     );
     return row ? toRow(row) : null;
   }
@@ -85,10 +85,10 @@ export class SqlAgentRepo implements AgentRepo {
   }
 
   async list(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<AgentRow[]> {
-    const conds = [eq(agents.tenant_id, tenantId)];
+    const conds = [eq(agents.user_id, userId)];
     if (!opts.includeArchived) conds.push(isNull(agents.archived_at));
     const rows = await getAll<typeof agents.$inferSelect>(
       this.db
@@ -101,7 +101,7 @@ export class SqlAgentRepo implements AgentRepo {
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       status?: "active" | "archived" | "any";
       createdAfter?: number;
@@ -111,7 +111,7 @@ export class SqlAgentRepo implements AgentRepo {
       q?: string;
     },
   ): Promise<{ items: AgentRow[]; hasMore: boolean }> {
-    const conds = [eq(agents.tenant_id, tenantId)];
+    const conds = [eq(agents.user_id, userId)];
     // status: default "any" — caller has to opt in to a narrow row set.
     // Mirrors the legacy includeArchived=true default; callers that
     // genuinely want "exclude archived" pass "active" explicitly.
@@ -154,10 +154,10 @@ export class SqlAgentRepo implements AgentRepo {
   }
 
   async count(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<number> {
-    const conds = [eq(agents.tenant_id, tenantId)];
+    const conds = [eq(agents.user_id, userId)];
     if (!opts.includeArchived) conds.push(isNull(agents.archived_at));
     const row = await getOne<{ c: number }>(
       this.db
@@ -169,7 +169,7 @@ export class SqlAgentRepo implements AgentRepo {
   }
 
   async updateWithVersionSnapshot(
-    tenantId: string,
+    userId: string,
     agentId: string,
     update: AgentUpdateFields,
     priorSnapshot: AgentVersionSnapshotInput,
@@ -178,7 +178,7 @@ export class SqlAgentRepo implements AgentRepo {
     // current row. Atomic on D1 batch / PG transaction. No FK needed.
     const insertSnapshotQ = this.db.insert(agent_versions).values({
       agent_id: priorSnapshot.agentId,
-      tenant_id: priorSnapshot.tenantId,
+      user_id: priorSnapshot.userId,
       version: priorSnapshot.version,
       snapshot: JSON.stringify(priorSnapshot.snapshot),
       created_at: priorSnapshot.createdAt,
@@ -190,7 +190,7 @@ export class SqlAgentRepo implements AgentRepo {
         version: update.version,
         updated_at: update.updatedAt,
       })
-      .where(and(eq(agents.id, agentId), eq(agents.tenant_id, tenantId)));
+      .where(and(eq(agents.id, agentId), eq(agents.user_id, userId)));
 
     await atomicWrite(this.db, [insertSnapshotQ, updateAgentQ]);
 
@@ -198,23 +198,23 @@ export class SqlAgentRepo implements AgentRepo {
     // the batch result (D1 surfaces meta.changes per-statement, but PG's
     // transaction return shape is different). One extra round-trip in the
     // success path; keeps the dialect fork small.
-    const row = await this.get(tenantId, agentId);
+    const row = await this.get(userId, agentId);
     if (!row) throw new AgentNotFoundError();
     return row;
   }
 
   async archive(
-    tenantId: string,
+    userId: string,
     agentId: string,
     archivedAt: number,
   ): Promise<AgentRow> {
     // Read the existing config so we can bump archived_at inside the JSON
     // alongside the column for round-trip consistency with consumers that
     // read straight from the parsed config (e.g. SessionDO snapshot fallback).
-    const existing = await this.get(tenantId, agentId);
+    const existing = await this.get(userId, agentId);
     if (!existing) throw new AgentNotFoundError();
     const nextConfig: AgentConfig = {
-      ...stripTenantId(existing),
+      ...stripUserId(existing),
       archived_at: msToIso(archivedAt),
     };
     await runOnce(
@@ -225,26 +225,26 @@ export class SqlAgentRepo implements AgentRepo {
           updated_at: archivedAt,
           config: JSON.stringify(nextConfig),
         })
-        .where(and(eq(agents.id, agentId), eq(agents.tenant_id, tenantId))),
+        .where(and(eq(agents.id, agentId), eq(agents.user_id, userId))),
     );
-    const row = await this.get(tenantId, agentId);
+    const row = await this.get(userId, agentId);
     if (!row) throw new AgentNotFoundError();
     return row;
   }
 
-  async deleteWithVersions(tenantId: string, agentId: string): Promise<void> {
+  async deleteWithVersions(userId: string, agentId: string): Promise<void> {
     // Two-statement batch: drop history rows first then the agent row.
     const deleteVersionsQ = this.db
       .delete(agent_versions)
       .where(eq(agent_versions.agent_id, agentId));
     const deleteAgentQ = this.db
       .delete(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.tenant_id, tenantId)));
+      .where(and(eq(agents.id, agentId), eq(agents.user_id, userId)));
     await atomicWrite(this.db, [deleteVersionsQ, deleteAgentQ]);
   }
 
   async listVersions(
-    tenantId: string,
+    userId: string,
     agentId: string,
   ): Promise<AgentVersionRow[]> {
     const rows = await getAll<typeof agent_versions.$inferSelect>(
@@ -254,7 +254,7 @@ export class SqlAgentRepo implements AgentRepo {
         .where(
           and(
             eq(agent_versions.agent_id, agentId),
-            eq(agent_versions.tenant_id, tenantId),
+            eq(agent_versions.user_id, userId),
           ),
         )
         .orderBy(asc(agent_versions.version)),
@@ -263,7 +263,7 @@ export class SqlAgentRepo implements AgentRepo {
   }
 
   async getVersion(
-    tenantId: string,
+    userId: string,
     agentId: string,
     version: number,
   ): Promise<AgentVersionRow | null> {
@@ -274,7 +274,7 @@ export class SqlAgentRepo implements AgentRepo {
         .where(
           and(
             eq(agent_versions.agent_id, agentId),
-            eq(agent_versions.tenant_id, tenantId),
+            eq(agent_versions.user_id, userId),
             eq(agent_versions.version, version),
           ),
         ),
@@ -290,7 +290,7 @@ function toRow(r: typeof agents.$inferSelect): AgentRow {
   // in sync, but archive_at via the column path is the canonical one).
   return {
     ...cfg,
-    tenant_id: r.tenant_id,
+    user_id: r.user_id,
     version: r.version,
     created_at: msToIso(r.created_at),
     updated_at: r.updated_at !== null ? msToIso(r.updated_at) : undefined,
@@ -301,18 +301,18 @@ function toRow(r: typeof agents.$inferSelect): AgentRow {
 function toVersionRow(r: typeof agent_versions.$inferSelect): AgentVersionRow {
   return {
     agent_id: r.agent_id,
-    tenant_id: r.tenant_id,
+    user_id: r.user_id,
     version: r.version,
     snapshot: JSON.parse(r.snapshot) as AgentConfig,
     created_at: msToIso(r.created_at),
   };
 }
 
-function stripTenantId(row: AgentRow): AgentConfig {
-  const { tenant_id: _t, ...rest } = row;
+function stripUserId(row: AgentRow): AgentConfig {
+  const { user_id: _t, ...rest } = row;
   return rest;
 }
 
-function msToIso(ms: number): string {
-  return new Date(ms).toISOString();
+function msToIso(ms: number | string): string {
+  return new Date(Number(ms)).toISOString();
 }

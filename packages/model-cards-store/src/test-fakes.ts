@@ -21,7 +21,7 @@ import type { ModelCardRow } from "./types";
 
 interface InMemModelCard {
   id: string;
-  tenant_id: string;
+  user_id: string;
   model_id: string;
   provider: string;
   model: string;
@@ -39,23 +39,23 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
   private readonly byId = new Map<string, InMemModelCard>();
 
   async insert(input: NewModelCardInput): Promise<ModelCardRow> {
-    // Match the D1 UNIQUE(tenant_id, model_id).
+    // Match the D1 UNIQUE(user_id, model_id).
     for (const c of this.byId.values()) {
-      if (c.tenant_id === input.tenantId && c.model_id === input.modelId) {
+      if (c.user_id === input.userId && c.model_id === input.modelId) {
         throw new ModelCardDuplicateModelIdError(input.modelId);
       }
     }
     if (input.isDefault) {
       // Atomic clear-then-insert: matches the D1 batch in the adapter.
-      // Without the clear, the partial UNIQUE(tenant_id) WHERE is_default=1
+      // Without the clear, the partial UNIQUE(user_id) WHERE is_default=1
       // would reject the insert when another default already exists.
-      this.clearTenantDefaults(input.tenantId, input.createdAt);
+      this.clearUserDefaults(input.userId, input.createdAt);
     }
     // else: nothing to enforce — partial UNIQUE only constrains rows
     // where is_default = 1, so a non-default insert can't violate it.
     const row: InMemModelCard = {
       id: input.id,
-      tenant_id: input.tenantId,
+      user_id: input.userId,
       model_id: input.modelId,
       provider: input.provider,
       model: input.model,
@@ -72,21 +72,21 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
     return toRow(row);
   }
 
-  async get(tenantId: string, cardId: string): Promise<ModelCardRow | null> {
+  async get(userId: string, cardId: string): Promise<ModelCardRow | null> {
     const row = this.byId.get(cardId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return toRow(row);
   }
 
-  async list(tenantId: string): Promise<ModelCardRow[]> {
+  async list(userId: string): Promise<ModelCardRow[]> {
     return Array.from(this.byId.values())
-      .filter((c) => c.tenant_id === tenantId)
+      .filter((c) => c.user_id === userId)
       .sort((a, b) => a.created_at - b.created_at)
       .map(toRow);
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       limit: number;
       after?: import("@open-managed-agents/shared").PageCursor;
@@ -98,7 +98,7 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
   ): Promise<{ items: ModelCardRow[]; hasMore: boolean }> {
     const qLower = opts.q?.toLowerCase();
     let rows = Array.from(this.byId.values())
-      .filter((c) => c.tenant_id === tenantId)
+      .filter((c) => c.user_id === userId)
       .filter((c) =>
         qLower
           ? (c.model_id ?? "").toLowerCase().includes(qLower) ||
@@ -127,12 +127,12 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
   }
 
   async findByModelId(
-    tenantId: string,
+    userId: string,
     modelId: string,
   ): Promise<ModelCardRow | null> {
     for (const c of this.byId.values()) {
       if (
-        c.tenant_id === tenantId &&
+        c.user_id === userId &&
         c.model_id === modelId &&
         c.archived_at === null
       ) {
@@ -142,9 +142,9 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
     return null;
   }
 
-  async getDefault(tenantId: string): Promise<ModelCardRow | null> {
+  async getDefault(userId: string): Promise<ModelCardRow | null> {
     for (const c of this.byId.values()) {
-      if (c.tenant_id === tenantId && c.is_default && c.archived_at === null) {
+      if (c.user_id === userId && c.is_default && c.archived_at === null) {
         return toRow(c);
       }
     }
@@ -152,19 +152,19 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
   }
 
   async update(
-    tenantId: string,
+    userId: string,
     cardId: string,
     update: ModelCardUpdateFields,
   ): Promise<ModelCardRow> {
     const row = this.byId.get(cardId);
-    if (!row || row.tenant_id !== tenantId) throw new ModelCardNotFoundError();
+    if (!row || row.user_id !== userId) throw new ModelCardNotFoundError();
 
-    // UNIQUE(tenant_id, model_id) check on rename
+    // UNIQUE(user_id, model_id) check on rename
     if (update.modelId !== undefined && update.modelId !== row.model_id) {
       for (const c of this.byId.values()) {
         if (
           c.id !== row.id &&
-          c.tenant_id === tenantId &&
+          c.user_id === userId &&
           c.model_id === update.modelId
         ) {
           throw new ModelCardDuplicateModelIdError(update.modelId);
@@ -174,7 +174,7 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
 
     if (update.isDefault === true && !row.is_default) {
       // Atomic clear-then-flip to mirror the D1 batch.
-      this.clearTenantDefaults(tenantId, update.updatedAt);
+      this.clearUserDefaults(userId, update.updatedAt);
     } else if (update.isDefault === true && row.is_default) {
       // Already default; no-op atomic.
     } else if (update.isDefault === undefined) {
@@ -192,20 +192,20 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
     row.updated_at = update.updatedAt;
 
     // Final partial-UNIQUE assertion — should never fire on the service path.
-    if (row.is_default) this.assertNoOtherDefault(tenantId, row.id);
+    if (row.is_default) this.assertNoOtherDefault(userId, row.id);
 
     return toRow(row);
   }
 
-  async delete(tenantId: string, cardId: string): Promise<void> {
+  async delete(userId: string, cardId: string): Promise<void> {
     const row = this.byId.get(cardId);
-    if (!row || row.tenant_id !== tenantId) return;
+    if (!row || row.user_id !== userId) return;
     this.byId.delete(cardId);
   }
 
-  async archive(tenantId: string, cardId: string, archivedAt: number): Promise<ModelCardRow> {
+  async archive(userId: string, cardId: string, archivedAt: number): Promise<ModelCardRow> {
     const row = this.byId.get(cardId);
-    if (!row || row.tenant_id !== tenantId) throw new ModelCardNotFoundError();
+    if (!row || row.user_id !== userId) throw new ModelCardNotFoundError();
     row.archived_at = archivedAt;
     row.updated_at = archivedAt;
     row.is_default = false;
@@ -213,48 +213,48 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
   }
 
   async setDefault(
-    tenantId: string,
+    userId: string,
     cardId: string,
     updatedAt: number,
   ): Promise<ModelCardRow> {
     const row = this.byId.get(cardId);
-    if (!row || row.tenant_id !== tenantId) throw new ModelCardNotFoundError();
-    this.clearTenantDefaults(tenantId, updatedAt);
+    if (!row || row.user_id !== userId) throw new ModelCardNotFoundError();
+    this.clearUserDefaults(userId, updatedAt);
     row.is_default = true;
     row.updated_at = updatedAt;
     return toRow(row);
   }
 
   async getApiKeyCipher(
-    tenantId: string,
+    userId: string,
     cardId: string,
   ): Promise<string | null> {
     const row = this.byId.get(cardId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return row.api_key_cipher;
   }
 
   // ── helpers used by both insert + update + setDefault ──
 
-  /** Atomically clear is_default = 1 on every other card in the tenant. */
-  private clearTenantDefaults(tenantId: string, updatedAt: number): void {
+  /** Atomically clear is_default = 1 on every other card in the user. */
+  private clearUserDefaults(userId: string, updatedAt: number): void {
     for (const c of this.byId.values()) {
-      if (c.tenant_id === tenantId && c.is_default) {
+      if (c.user_id === userId && c.is_default) {
         c.is_default = false;
         c.updated_at = updatedAt;
       }
     }
   }
 
-  /** Throws ModelCardDefaultConflictError if any other row in the tenant has
+  /** Throws ModelCardDefaultConflictError if any other row in the user has
    *  is_default = true (excluding `exceptId` if provided). */
   private assertNoOtherDefault(
-    tenantId: string,
+    userId: string,
     exceptId: string | null,
   ): void {
     for (const c of this.byId.values()) {
       if (
-        c.tenant_id === tenantId &&
+        c.user_id === userId &&
         c.is_default &&
         (exceptId === null || c.id !== exceptId)
       ) {
@@ -335,7 +335,7 @@ export function createInMemoryModelCardService(opts?: {
 function toRow(c: InMemModelCard): ModelCardRow {
   return {
     id: c.id,
-    tenant_id: c.tenant_id,
+    user_id: c.user_id,
     model_id: c.model_id,
     model: c.model,
     provider: c.provider,

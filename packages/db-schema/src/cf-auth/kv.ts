@@ -6,7 +6,7 @@
 // home for everything.
 //
 // Tables:
-//   kv_entries  — generic tenant-scoped KV. PK is (tenant_id, key).
+//   kv_entries  — generic user-scoped KV. PK is (user_id, key).
 //   api_keys    — bearer credentials (oma_*). hash = sha256(rawKey) hex.
 //
 // Source: packages/schema/src/index.ts (kv_entries + api_keys sections).
@@ -18,20 +18,19 @@ import { primaryKey } from "drizzle-orm/sqlite-core";
 export const kv_entries = sqliteTable(
   "kv_entries",
   {
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     key: text("key").notNull(),
     value: text("value").notNull(),
     expires_at: integer("expires_at"),
   },
-  (t) => [primaryKey({ columns: [t.tenant_id, t.key] })],
+  (t) => [primaryKey({ columns: [t.user_id, t.key] })],
 );
 
 export const api_keys = sqliteTable(
   "api_keys",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
-    user_id: text("user_id"),
+    user_id: text("user_id").notNull(),
     name: text("name").notNull(),
     prefix: text("prefix").notNull(),
     hash: text("hash").notNull().unique(),
@@ -39,5 +38,5 @@ export const api_keys = sqliteTable(
     last_used_at: integer("last_used_at"),
     revoked_at: integer("revoked_at"),
   },
-  (t) => [index("idx_api_keys_tenant").on(t.tenant_id, t.revoked_at)],
+  (t) => [index("idx_api_keys_user").on(t.user_id, t.revoked_at)],
 );

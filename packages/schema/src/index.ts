@@ -44,7 +44,7 @@ async function withPgRaceRetry(
 
 /**
  * better-auth's tables. Mirrors what `npx @better-auth/cli generate` produces
- * for emailAndPassword + additionalFields (tenantId, role).
+ * for emailAndPassword and the standard Better Auth user fields.
  */
 export async function applyBetterAuthSchema(opts: {
   sql: SqlClient;
@@ -61,8 +61,6 @@ export async function applyBetterAuthSchema(opts: {
           "emailVerified" BOOLEAN NOT NULL DEFAULT FALSE,
           "name" TEXT NOT NULL,
           "image" TEXT,
-          "tenantId" TEXT,
-          "role" TEXT,
           "createdAt" TIMESTAMPTZ NOT NULL,
           "updatedAt" TIMESTAMPTZ NOT NULL
         );
@@ -117,8 +115,6 @@ export async function applyBetterAuthSchema(opts: {
         "emailVerified" INTEGER NOT NULL DEFAULT 0,
         "name" TEXT NOT NULL,
         "image" TEXT,
-        "tenantId" TEXT,
-        "role" TEXT,
         "createdAt" INTEGER NOT NULL,
         "updatedAt" INTEGER NOT NULL
       );
@@ -157,32 +153,6 @@ export async function applyBetterAuthSchema(opts: {
       );
     `);
   }
-}
-
-/**
- * Tenant + membership tables. Always installed regardless of better-auth.
- * Self-host runs these directly against the main SqlClient; CF declares
- * `tenant` + `membership` in apps/main/migrations/0001_schema.sql with the
- * legacy `createdAt`/`updatedAt` casing better-auth dropped on us.
- */
-export async function applyTenantSchema(sql: SqlClient): Promise<void> {
-  await sql.exec(`
-    CREATE TABLE IF NOT EXISTS "tenant" (
-      "id"         TEXT PRIMARY KEY NOT NULL,
-      "name"       TEXT NOT NULL,
-      "created_at" BIGINT NOT NULL,
-      "updated_at" BIGINT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS "membership" (
-      "user_id"    TEXT NOT NULL,
-      "tenant_id"  TEXT NOT NULL,
-      "role"       TEXT NOT NULL,
-      "created_at" BIGINT NOT NULL,
-      PRIMARY KEY ("user_id", "tenant_id")
-    );
-    CREATE INDEX IF NOT EXISTS "idx_membership_user"
-      ON "membership" ("user_id");
-  `);
 }
 
 /**

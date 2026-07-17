@@ -34,12 +34,12 @@ export interface SandboxExecutor {
    * a no-op or implementation-specific.
    */
   /**
-   * Hand the (tenant, env, session) tuple to the OmaSandbox container DO so
+   * Hand the (user, env, session) tuple to the OmaSandbox container DO so
    * its onActivityExpired hook (sleepAfter teardown) records the final
    * /workspace snapshot scoped to this session.
    */
   setBackupContext?(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
     sessionId: string;
   }): Promise<void>;
@@ -67,13 +67,13 @@ export interface SandboxExecutor {
    * mounts reject writes.
    */
   /**
-   * Mount FILES_BUCKET at /mnt/session/outputs/ scoped to (tenantId, sessionId)
+   * Mount FILES_BUCKET at /mnt/session/outputs/ scoped to (userId, sessionId)
    * via R2 prefix. Anything the agent writes here appears in real time via
    * the caller-facing GET /v1/sessions/:id/outputs endpoint. AMA-aligned
    * "magic dir" pattern — agent uses standard file tools, no extra tool.
    */
   mountSessionOutputs?(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
   }): Promise<void>;
   /**
@@ -131,7 +131,7 @@ export interface SandboxFactoryContext {
    *  via symlink (LocalSubprocess) read from this; remote adapters
    *  (Daytona/E2B) typically use s3fs and ignore it. */
   /** Session-outputs root on the host. LocalSubprocess symlinks
-   *  per-(tenant, session) dirs under here when mountSessionOutputs
+   *  per-(user, session) dirs under here when mountSessionOutputs
    *  is called; remote adapters that don't host-mount can ignore it. */
   outputsRoot?: string;
 }

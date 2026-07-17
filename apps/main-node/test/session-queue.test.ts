@@ -142,7 +142,7 @@ describe("SerialSessionTurnExecutor", () => {
     const seen: string[] = [];
     const executor = new SerialSessionTurnExecutor(queue, {
       run: async (input) => { seen.push(input.event.id!); },
-    }, {}, { resolveContext: async () => ({ tenantId: "tenant-a", agentId: "agent-a" }) });
+    }, {}, { resolveContext: async () => ({ userId: "user-a", agentId: "agent-a" }) });
     await executor.recover("crash");
     await executor.waitForIdle("crash");
     expect(seen).toEqual(["crash-1"]);
@@ -165,8 +165,8 @@ describe("SerialSessionTurnExecutor", () => {
     };
     const executor = new SerialSessionTurnExecutor(queue, runner);
 
-    await executor.enqueue("session-a", "tenant-a", "agent-a", message("a1"));
-    await executor.enqueue("session-a", "tenant-a", "agent-a", message("a2"));
+    await executor.enqueue("session-a", "user-a", "agent-a", message("a1"));
+    await executor.enqueue("session-a", "user-a", "agent-a", message("a2"));
     await executor.waitForIdle("session-a");
 
     expect(order).toEqual(["a1", "a2"]);
@@ -188,8 +188,8 @@ describe("SerialSessionTurnExecutor", () => {
     const executor = new SerialSessionTurnExecutor(queue, runner);
 
     await Promise.all([
-      executor.enqueue("session-a", "tenant-a", "agent-a", message("a1")),
-      executor.enqueue("session-b", "tenant-b", "agent-b", message("b1")),
+      executor.enqueue("session-a", "user-a", "agent-a", message("a1")),
+      executor.enqueue("session-b", "user-b", "agent-b", message("b1")),
     ]);
     await Promise.all([
       executor.waitForIdle("session-a"),
@@ -209,8 +209,8 @@ describe("SerialSessionTurnExecutor", () => {
     };
     const executor = new SerialSessionTurnExecutor(queue, runner);
 
-    const first = await executor.enqueue("session-a", "tenant-a", "agent-a", message("same"));
-    const second = await executor.enqueue("session-a", "tenant-a", "agent-a", message("same"));
+    const first = await executor.enqueue("session-a", "user-a", "agent-a", message("same"));
+    const second = await executor.enqueue("session-a", "user-a", "agent-a", message("same"));
     await executor.waitForIdle("session-a");
 
     expect(second.pendingSeq).toBe(first.pendingSeq);
@@ -232,8 +232,8 @@ describe("SerialSessionTurnExecutor", () => {
     };
     const executor = new SerialSessionTurnExecutor(queue, runner);
 
-    await executor.enqueue("session-a", "tenant-a", "agent-a", message("a1"));
-    await executor.enqueue("session-a", "tenant-a", "agent-a", message("a2"));
+    await executor.enqueue("session-a", "user-a", "agent-a", message("a1"));
+    await executor.enqueue("session-a", "user-a", "agent-a", message("a2"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     await executor.interrupt("session-a");
     await executor.waitForIdle("session-a");
@@ -263,7 +263,7 @@ describe("SerialSessionTurnExecutor", () => {
       hooks as never,
     );
 
-    await executor.enqueue("session-a", "tenant-a", "agent-a", message("cancel-1"));
+    await executor.enqueue("session-a", "user-a", "agent-a", message("cancel-1"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     await executor.interrupt("session-a");
     await executor.waitForIdle("session-a");
@@ -275,7 +275,7 @@ describe("SerialSessionTurnExecutor", () => {
     const queue = new RecordingQueue();
     const pool = new WorkerPool({
       maxActive: 1,
-      tenantMaxActive: 1,
+      userMaxActive: 1,
       timeoutMs: 10,
     });
     const executor = new SerialSessionTurnExecutor(
@@ -291,7 +291,7 @@ describe("SerialSessionTurnExecutor", () => {
       { workerPool: pool },
     );
 
-    await executor.enqueue("session-a", "tenant-a", "agent-a", message("timeout-1"));
+    await executor.enqueue("session-a", "user-a", "agent-a", message("timeout-1"));
     await executor.waitForIdle("session-a");
 
     expect(queue.turnStatuses).toEqual(["running", "failed"]);

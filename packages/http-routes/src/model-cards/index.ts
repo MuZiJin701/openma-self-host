@@ -28,7 +28,7 @@ export function buildModelCardRoutes(deps: {
   internalToken?: string;
   encryptionConfigured?: boolean;
 }) {
-  const app = new Hono<{ Variables: { tenant_id: string } }>();
+  const app = new Hono<{ Variables: { user_id: string } }>();
 
   app.post("/", async (c) => {
     const body = await c.req.json<{
@@ -48,7 +48,7 @@ export function buildModelCardRoutes(deps: {
     }
     try {
       const card = await deps.modelCards.create({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         modelId: body.model_id,
         model: body.model,
         provider: body.provider,
@@ -67,19 +67,19 @@ export function buildModelCardRoutes(deps: {
   });
 
   app.get("/", async (c) => {
-    const cards = await deps.modelCards.list({ tenantId: c.var.tenant_id });
+    const cards = await deps.modelCards.list({ userId: c.var.user_id });
     return c.json({ data: cards.filter((card) => card.archived_at === null).map(toApiShape) });
   });
 
   app.get("/:id", async (c) => {
     const card = await deps.modelCards.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       cardId: c.req.param("id"),
     });
     return card ? c.json(toApiShape(card)) : c.json({ error: "Model card not found" }, 404);
   });
 
-  const update = async (c: Context<{ Variables: { tenant_id: string } }>) => {
+  const update = async (c: Context<{ Variables: { user_id: string } }>) => {
     const cardId = c.req.param("id") ?? "";
     const body = await c.req.json<{
       model_id?: string;
@@ -92,7 +92,7 @@ export function buildModelCardRoutes(deps: {
     }>();
     try {
       const card = await deps.modelCards.update({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         cardId,
         modelId: body.model_id,
         model: body.model,
@@ -115,7 +115,7 @@ export function buildModelCardRoutes(deps: {
 
   app.delete("/:id", async (c) => {
     try {
-      await deps.modelCards.delete({ tenantId: c.var.tenant_id, cardId: c.req.param("id") });
+      await deps.modelCards.delete({ userId: c.var.user_id, cardId: c.req.param("id") });
       return c.json({ type: "model_card_deleted", id: c.req.param("id") });
     } catch (error) {
       if (error instanceof ModelCardNotFoundError) return c.json({ error: "Model card not found" }, 404);
@@ -126,7 +126,7 @@ export function buildModelCardRoutes(deps: {
   app.post("/:id/archive", async (c) => {
     try {
       const card = await deps.modelCards.archive({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         cardId: c.req.param("id"),
       });
       return c.json(toApiShape(card));
@@ -141,7 +141,7 @@ export function buildModelCardRoutes(deps: {
       return c.json({ error: "not found" }, 404);
     }
     const apiKey = await deps.modelCards.getApiKey({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       cardId: c.req.param("id"),
     });
     return apiKey === null ? c.json({ error: "Key not found" }, 404) : c.json({ api_key: apiKey });

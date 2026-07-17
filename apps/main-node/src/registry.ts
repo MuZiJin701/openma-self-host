@@ -20,7 +20,6 @@
 // — same interface CF wires for the OmaSandbox path. Per-runtime
 // mounters were removed in P5.
 
-import { join } from "node:path";
 import {
   RuntimeAdapterImpl,
   SessionStateMachine,
@@ -48,6 +47,7 @@ import type { LanguageModel } from "ai";
 import { getLogger } from "@open-managed-agents/observability";
 import type { EventStreamHub } from "./lib/event-stream-hub.js";
 import type { WorkerPool } from "./lib/worker-pool.js";
+import { createUserDataLayout } from "./lib/user-data-layout.js";
 
 const log = getLogger("session-registry");
 
@@ -55,7 +55,7 @@ export interface SessionRegistryDeps {
   sql: SqlClient;
   hub: EventStreamHub;
   agentsService: AgentService;
-  /** Tenant-scoped immutable skill store used during sandbox provisioning. */
+  /** User-scoped immutable skill store used during sandbox provisioning. */
   skillsService?: SkillService;
   /** Sandbox provisioning — outputs and backup-restore.
    *  Replaces the per-runtime buildMemoryMounter / buildSessionOutputsMounter
@@ -68,17 +68,17 @@ export interface SessionRegistryDeps {
 
   /** Build the per-session sandbox. The shell knows how to assemble a
    *  LocalSubprocess / E2B / Daytona / etc., the machine doesn't. */
-  buildSandbox(sessionId: string, workdir: string): Promise<SandboxExecutor>;
+  buildSandbox(sessionId: string, userId: string, workdir: string): Promise<SandboxExecutor>;
 
   /** Build the LanguageModel for the agent. Reads env, applies custom
    *  headers, picks the right provider. */
-  buildModel(agent: AgentConfig, tenantId?: string): LanguageModel | Promise<LanguageModel>;
+  buildModel(agent: AgentConfig, userId?: string): LanguageModel | Promise<LanguageModel>;
 
   /** Build harness tools. Returns the tools dict the harness expects. */
   buildTools(
     agent: AgentConfig,
     sandbox: SandboxExecutor,
-    tenantId?: string,
+    userId?: string,
     options?: { allowAlwaysAsk?: boolean },
   ): Promise<unknown>;
 
@@ -94,11 +94,10 @@ export interface SessionRegistryDeps {
     sessionId: string;
     eventLog: SqlEventLog;
     abortSignal?: AbortSignal;
-    tenantId?: string;
+    userId?: string;
   }): Promise<unknown>;
 
-  /** Sandbox workdir root, e.g. /app/data/sandboxes. Per-session dirs
-   *  are joined under it. */
+  /** DATA_DIR. Each user's shared workspace is derived below it. */
   sandboxWorkdirRoot: string;
 
   /** SQL dialect under the SqlClient. Threaded through to SqlStreamRepo
@@ -128,10 +127,10 @@ export class SessionRegistry {
    * machine is reused across HTTP requests (so chokidar watcher /
    * recovery / repeated user.messages all hit the same in-memory state).
    */
-  async getOrCreate(sessionId: string, tenantId: string): Promise<SessionEntry> {
+  async getOrCreate(sessionId: string, userId: string): Promise<SessionEntry> {
     let p = this.map.get(sessionId);
     if (!p) {
-      p = this.build(sessionId, tenantId);
+      p = this.build(sessionId, userId);
       this.map.set(sessionId, p);
     }
     return p;
@@ -150,14 +149,14 @@ export class SessionRegistry {
   async bootstrap(): Promise<void> {
     const r = await this.deps.sql
       .prepare(
-        `SELECT id, tenant_id FROM sessions WHERE status='running' AND turn_id IS NOT NULL`,
+        `SELECT id, user_id FROM sessions WHERE status='running' AND turn_id IS NOT NULL`,
       )
-      .all<{ id: string; tenant_id: string }>();
+      .all<{ id: string; user_id: string }>();
     const rows = r.results ?? [];
     if (rows.length > 0) {
       log.info({ op: "session_registry.bootstrap", recovering: rows.length }, `bootstrap: recovering ${rows.length} interrupted session(s)`);
       for (const row of rows) {
-        const entry = await this.getOrCreate(row.id, row.tenant_id);
+        const entry = await this.getOrCreate(row.id, row.user_id);
         try {
           await entry.machine.onWake();
         } catch (err) {
@@ -182,11 +181,11 @@ export class SessionRegistry {
     ]);
     for (const sessionId of recoverySessions) {
       const row = await this.deps.sql
-        .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
+        .prepare(`SELECT user_id, agent_id FROM sessions WHERE id = ?`)
         .bind(sessionId)
-        .first<{ tenant_id: string; agent_id: string | null }>();
+        .first<{ user_id: string; agent_id: string | null }>();
       if (!row?.agent_id) continue;
-      const entry = await this.getOrCreate(sessionId, row.tenant_id);
+      const entry = await this.getOrCreate(sessionId, row.user_id);
       await entry.executor.recover(sessionId);
     }
   }
@@ -227,11 +226,11 @@ export class SessionRegistry {
 
   async enqueueEvent(
     sessionId: string,
-    tenantId: string,
+    userId: string,
     agentId: string,
     event: SessionEvent,
   ): Promise<QueueReceipt> {
-    const entry = await this.getOrCreate(sessionId, tenantId);
+    const entry = await this.getOrCreate(sessionId, userId);
     if (event.type === "user.interrupt") {
       throw new SessionTurnConflictError(
         `session ${sessionId} interrupt must use the interrupt route`,
@@ -245,7 +244,7 @@ export class SessionRegistry {
         );
       }
     }
-    return entry.executor.enqueue(sessionId, tenantId, agentId, event);
+    return entry.executor.enqueue(sessionId, userId, agentId, event);
   }
 
   async listPending(sessionId: string, includeCancelled = false) {
@@ -256,31 +255,28 @@ export class SessionRegistry {
 
   private async build(
     sessionId: string,
-    tenantId: string,
+    userId: string,
   ): Promise<SessionEntry> {
-    // One stable workspace per tenant. Session-specific temporary mounts are
+    // One stable workspace per user. Session-specific temporary mounts are
     // kept inside the sandbox adapter and are cleaned up independently.
-    const sandboxWorkdir = join(
-      this.deps.sandboxWorkdirRoot,
-      "workspaces",
-      encodeURIComponent(tenantId),
-    );
-    const sandbox = await this.deps.buildSandbox(sessionId, sandboxWorkdir);
+    const layout = createUserDataLayout(this.deps.sandboxWorkdirRoot);
+    const sandboxWorkdir = layout.workspaceRoot(userId);
+    const sandbox = await this.deps.buildSandbox(sessionId, userId, sandboxWorkdir);
     const sessionRow = await this.deps.sql
-      .prepare(`SELECT agent_id FROM sessions WHERE id = ? AND tenant_id = ?`)
-      .bind(sessionId, tenantId)
+      .prepare(`SELECT agent_id FROM sessions WHERE id = ? AND user_id = ?`)
+      .bind(sessionId, userId)
       .first<{ agent_id: string | null }>();
     const sessionAgent = sessionRow?.agent_id
-      ? await this.deps.agentsService.get({ tenantId, agentId: sessionRow.agent_id })
+      ? await this.deps.agentsService.get({ userId, agentId: sessionRow.agent_id })
       : null;
 
     await this.deps.sandboxOrchestrator.provision(sandbox, {
       sessionId,
-      tenantId,
+      userId,
       mountOutputs: true,
       backup: { restoreOnWarm: true },
     });
-    await this.mountAgentSkills(sandbox, tenantId, sessionAgent?.skills);
+    await this.mountAgentSkills(sandbox, userId, sessionAgent?.skills);
 
     const eventLog = this.deps.newEventLog(sessionId);
     const streams = new SqlStreamRepo(this.deps.sql, sessionId, this.deps.sqlDialect ?? "sqlite");
@@ -295,11 +291,11 @@ export class SessionRegistry {
 
     const machine = new SessionStateMachine({
       sessionId,
-      tenantId,
+      userId,
       adapter,
       sandbox,
       loadAgent: async (agentId) => {
-        const row = await this.deps.agentsService.get({ tenantId, agentId });
+        const row = await this.deps.agentsService.get({ userId, agentId });
         return row ?? null;
       },
       // Memory + outputs mounting happens in the orchestrator above.
@@ -307,15 +303,15 @@ export class SessionRegistry {
       // Node passes no-ops since the work has already been done.
       mountMemoryStores: async () => {},
       mountSessionOutputs: async () => {},
-      buildModel: (agent) => this.deps.buildModel(agent, tenantId),
-      buildTools: (agent, sb) => this.deps.buildTools(agent, sb, tenantId),
+      buildModel: (agent) => this.deps.buildModel(agent, userId),
+      buildTools: (agent, sb) => this.deps.buildTools(agent, sb, userId),
       buildHarness: () => this.deps.buildHarness(),
       buildHarnessContext: (input) =>
         this.deps.buildHarnessContext({
           ...input,
           sessionId,
           eventLog,
-          tenantId,
+          userId,
         }),
       publish: (event: SessionEvent) => this.deps.hub.publish(sessionId, event),
       afterHarnessRun: async (ctx) => {
@@ -361,7 +357,7 @@ export class SessionRegistry {
           if (action) {
             await this.deliverToolAction(
               sessionId,
-              tenantId,
+              userId,
               sessionAgent,
               sandbox,
               eventLog,
@@ -404,13 +400,13 @@ export class SessionRegistry {
         },
         resolveContext: async (sid) => {
           const row = await this.deps.sql
-            .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
+            .prepare(`SELECT user_id, agent_id FROM sessions WHERE id = ?`)
             .bind(sid)
-            .first<{ tenant_id: string; agent_id: string | null }>();
+            .first<{ user_id: string; agent_id: string | null }>();
           if (!row?.agent_id) {
             throw new Error(`session ${sid} has no agent routing context`);
           }
-          return { tenantId: row.tenant_id, agentId: row.agent_id };
+          return { userId: row.user_id, agentId: row.agent_id };
         },
         workerPool: this.deps.workerPool,
       },
@@ -421,18 +417,18 @@ export class SessionRegistry {
 
   private async mountAgentSkills(
     sandbox: SandboxExecutor,
-    tenantId: string,
+    userId: string,
     bindings: AgentConfig["skills"],
   ): Promise<void> {
     if (!this.deps.skillsService || !bindings?.length) return;
     for (const binding of bindings) {
       const item = binding as unknown as { skill_id?: string; version?: string };
       if (!item.skill_id) continue;
-      const skill = await this.deps.skillsService.get(tenantId, item.skill_id);
+      const skill = await this.deps.skillsService.get(userId, item.skill_id);
       if (!skill || skill.archived_at) continue;
       const version = item.version ?? skill.latest_version;
       if (!version) continue;
-      const row = await this.deps.skillsService.getVersion(tenantId, skill.id, version);
+      const row = await this.deps.skillsService.getVersion(userId, skill.id, version);
       if (!row) continue;
       for (const file of row.files) {
         await sandbox.writeFile(`/mnt/skills/${skill.id}/${version}/${file.filename}`, file.content);
@@ -448,13 +444,13 @@ export class SessionRegistry {
         await sandbox.exec("chmod -R a-w -- /mnt/skills 2>/dev/null || true", 5_000);
       }
     } catch (error) {
-      log.warn({ op: "skills.mount_readonly_failed", tenant_id: tenantId, err: error }, "skill mount could not be made read-only");
+      log.warn({ op: "skills.mount_readonly_failed", user_id: userId, err: error }, "skill mount could not be made read-only");
     }
   }
 
   private async deliverToolAction(
     sessionId: string,
-    tenantId: string,
+    userId: string,
     agent: AgentConfig | null | undefined,
     sandbox: SandboxExecutor,
     eventLog: SqlEventLog,
@@ -472,7 +468,7 @@ export class SessionRegistry {
       isError = true;
     } else {
       if (!agent) throw new Error(`agent unavailable for tool ${pending.toolName}`);
-      const tools = await this.deps.buildTools(agent, sandbox, tenantId, {
+      const tools = await this.deps.buildTools(agent, sandbox, userId, {
         allowAlwaysAsk: true,
       });
       const tool = (tools as Record<string, {

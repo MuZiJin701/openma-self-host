@@ -76,29 +76,6 @@ export class ApiError extends Error {
   }
 }
 
-/** localStorage key for the active tenant the Console wants to operate as.
- *  Sent on every /v1/* request as `x-active-tenant`; the backend validates
- *  membership before honoring. Single-tenant users never write this. */
-export const ACTIVE_TENANT_KEY = "oma_active_tenant_id";
-
-export function getActiveTenantId(): string | null {
-  try {
-    return localStorage.getItem(ACTIVE_TENANT_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setActiveTenantId(id: string | null): void {
-  try {
-    if (id) localStorage.setItem(ACTIVE_TENANT_KEY, id);
-    else localStorage.removeItem(ACTIVE_TENANT_KEY);
-  } catch {
-    // localStorage may be disabled (private mode, embedded webview);
-    // the user just won't get the multi-tenant switcher.
-  }
-}
-
 /** Endpoints whose 401/403 are part of normal app flow and should NOT
  *  surface as a toast. /auth-info is checked on every page load to decide
  *  whether to show the login screen — a 401 means "not logged in", which
@@ -126,7 +103,6 @@ export function useApi() {
       path: string,
       init?: RequestInit
     ): Promise<T> {
-      const activeTenant = getActiveTenantId();
       // Don't auto-set JSON content-type for FormData — the browser must add
       // multipart boundaries itself, and a manually set content-type without
       // the boundary breaks parsing on the server.
@@ -138,10 +114,6 @@ export function useApi() {
           credentials: "include",
           headers: {
             ...(init?.body && !isFormData ? { "content-type": "application/json" } : {}),
-            // Pin the workspace for this request. Backend validates membership;
-            // a stale value (deleted tenant, removed membership) yields 403 and
-            // the sidebar's catch-and-retry path clears + reloads.
-            ...(activeTenant ? { "x-active-tenant": activeTenant } : {}),
             ...init?.headers,
           },
         });
@@ -164,38 +136,10 @@ export function useApi() {
         const info = readApiError(body, res.status);
         const requestId = (body as { request_id?: unknown })?.request_id;
 
-        // Safety net for stale-tenant lockout. The primary fix is in Login.tsx
-        // (clears localStorage on every successful auth transition). This still
-        // catches edge cases the login fix can't:
-        //   - User opens 2 tabs, signs out + signs in as a different user in
-        //     tab A; tab B still has the old user's tenant pin in localStorage
-        //   - A tenant the user belonged to gets revoked while they're already
-        //     logged in
-        //   - Cross-domain edge cases where localStorage carries over via
-        //     extension / shared profile sync
-        // Dispatch on the stable wire-format code (`not_a_member`) rather
-        // than the human message — the backend emits this from auth.ts /
-        // http-routes/tenants/index.ts / apps/main/src/auth.ts via the
-        // Anthropic-style envelope. Reload-loop guard prevents bouncing if
-        // 403 is from some unrelated membership check.
-        if (
-          res.status === 403 &&
-          activeTenant &&
-          info.code === "not_a_member" &&
-          !sessionStorage.getItem("oma_tenant_self_heal")
-        ) {
-          sessionStorage.setItem("oma_tenant_self_heal", "1");
-          setActiveTenantId(null);
-          toast.info("Reset stored workspace pin (was unrecognized) — reloading");
-          // Give the toast a tick to render before navigation.
-          setTimeout(() => location.reload(), 250);
-          throw new ApiError({ ...info, status: res.status });
-        }
-
         // Surface non-OK responses to the user. Silently dropped errors had us
         // chasing "why don't I see anything" issues for far too long; almost
         // every endpoint failure here is something the user could act on
-        // (re-login, switch tenant, retry) once they know it happened.
+        // (re-login or retry) once they know it happened.
         //
         // Toast format: server message verbatim. The previous shape prefixed
         // the API path (e.g. "/v1/sessions: Insufficient balance.") which
@@ -211,9 +155,6 @@ export function useApi() {
           requestId: typeof requestId === "string" ? requestId : undefined,
         });
       }
-      // Successful response — clear the self-heal sentinel so a future stale
-      // tenant can self-heal again later in the same browser session.
-      sessionStorage.removeItem("oma_tenant_self_heal");
       return res.json() as Promise<T>;
     },
     [],
@@ -225,10 +166,6 @@ export function useApi() {
       onEvent: (event: Record<string, unknown>) => void,
       signal?: AbortSignal,
     ) => {
-      const activeTenant = getActiveTenantId();
-      // SSE endpoint goes through the same auth middleware so it needs the
-      // header too. The native fetch we use under the hood lets us set it;
-      // EventSource wouldn't.
       //
       // Console opts into both `chunks` (token-by-token rendering, pending
       // queue events, session.warning, extra spans) and `replay=1` (full
@@ -253,7 +190,6 @@ export function useApi() {
 
       void streamSse(path, {
         signal,
-        headers: activeTenant ? { "x-active-tenant": activeTenant } : {},
         async onOpen(response) {
           if (response.ok) {
             // Connection (re)established — clear the failure counter so the

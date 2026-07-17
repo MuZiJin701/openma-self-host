@@ -18,7 +18,7 @@ import type { AgentRow, AgentVersionRow } from "./types";
 
 interface InMemAgent {
   id: string;
-  tenant_id: string;
+  user_id: string;
   config: AgentConfig;
   version: number;
   created_at: number;
@@ -28,7 +28,7 @@ interface InMemAgent {
 
 interface InMemVersion {
   agent_id: string;
-  tenant_id: string;
+  user_id: string;
   version: number;
   snapshot: AgentConfig;
   created_at: number;
@@ -42,7 +42,7 @@ export class InMemoryAgentRepo implements AgentRepo {
   async insert(input: NewAgentInput): Promise<AgentRow> {
     const row: InMemAgent = {
       id: input.id,
-      tenant_id: input.tenantId,
+      user_id: input.userId,
       config: input.config,
       version: input.config.version,
       created_at: input.createdAt,
@@ -53,9 +53,9 @@ export class InMemoryAgentRepo implements AgentRepo {
     return toRow(row);
   }
 
-  async get(tenantId: string, agentId: string): Promise<AgentRow | null> {
+  async get(userId: string, agentId: string): Promise<AgentRow | null> {
     const row = this.byId.get(agentId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return toRow(row);
   }
 
@@ -65,18 +65,18 @@ export class InMemoryAgentRepo implements AgentRepo {
   }
 
   async list(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<AgentRow[]> {
     return Array.from(this.byId.values())
-      .filter((r) => r.tenant_id === tenantId)
+      .filter((r) => r.user_id === userId)
       .filter((r) => opts.includeArchived || r.archived_at === null)
       .sort((a, b) => a.created_at - b.created_at)
       .map(toRow);
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       status?: "active" | "archived" | "any";
       createdAfter?: number;
@@ -88,7 +88,7 @@ export class InMemoryAgentRepo implements AgentRepo {
   ): Promise<{ items: AgentRow[]; hasMore: boolean }> {
     const qLower = opts.q?.toLowerCase();
     let rows = Array.from(this.byId.values())
-      .filter((r) => r.tenant_id === tenantId)
+      .filter((r) => r.user_id === userId)
       .filter((r) => {
         if (opts.status === "active") return r.archived_at === null;
         if (opts.status === "archived") return r.archived_at !== null;
@@ -119,28 +119,28 @@ export class InMemoryAgentRepo implements AgentRepo {
   }
 
   async count(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<number> {
     return Array.from(this.byId.values())
-      .filter((r) => r.tenant_id === tenantId)
+      .filter((r) => r.user_id === userId)
       .filter((r) => opts.includeArchived || r.archived_at === null)
       .length;
   }
 
   async updateWithVersionSnapshot(
-    tenantId: string,
+    userId: string,
     agentId: string,
     update: AgentUpdateFields,
     priorSnapshot: AgentVersionSnapshotInput,
   ): Promise<AgentRow> {
     const row = this.byId.get(agentId);
-    if (!row || row.tenant_id !== tenantId) throw new AgentNotFoundError();
+    if (!row || row.user_id !== userId) throw new AgentNotFoundError();
     // Atomic: write the prior snapshot to history, then bump the current row.
     const versionKey = `${priorSnapshot.agentId}:v${priorSnapshot.version}`;
     this.versionsByKey.set(versionKey, {
       agent_id: priorSnapshot.agentId,
-      tenant_id: priorSnapshot.tenantId,
+      user_id: priorSnapshot.userId,
       version: priorSnapshot.version,
       snapshot: priorSnapshot.snapshot,
       created_at: priorSnapshot.createdAt,
@@ -152,12 +152,12 @@ export class InMemoryAgentRepo implements AgentRepo {
   }
 
   async archive(
-    tenantId: string,
+    userId: string,
     agentId: string,
     archivedAt: number,
   ): Promise<AgentRow> {
     const row = this.byId.get(agentId);
-    if (!row || row.tenant_id !== tenantId) throw new AgentNotFoundError();
+    if (!row || row.user_id !== userId) throw new AgentNotFoundError();
     row.archived_at = archivedAt;
     row.updated_at = archivedAt;
     // Mirror archived_at into the embedded config so consumers reading from
@@ -166,9 +166,9 @@ export class InMemoryAgentRepo implements AgentRepo {
     return toRow(row);
   }
 
-  async deleteWithVersions(tenantId: string, agentId: string): Promise<void> {
+  async deleteWithVersions(userId: string, agentId: string): Promise<void> {
     const row = this.byId.get(agentId);
-    if (!row || row.tenant_id !== tenantId) return;
+    if (!row || row.user_id !== userId) return;
     this.byId.delete(agentId);
     for (const [key, ver] of this.versionsByKey.entries()) {
       if (ver.agent_id === agentId) this.versionsByKey.delete(key);
@@ -176,22 +176,22 @@ export class InMemoryAgentRepo implements AgentRepo {
   }
 
   async listVersions(
-    tenantId: string,
+    userId: string,
     agentId: string,
   ): Promise<AgentVersionRow[]> {
     return Array.from(this.versionsByKey.values())
-      .filter((v) => v.agent_id === agentId && v.tenant_id === tenantId)
+      .filter((v) => v.agent_id === agentId && v.user_id === userId)
       .sort((a, b) => a.version - b.version)
       .map(toVersionRow);
   }
 
   async getVersion(
-    tenantId: string,
+    userId: string,
     agentId: string,
     version: number,
   ): Promise<AgentVersionRow | null> {
     const row = this.versionsByKey.get(`${agentId}:v${version}`);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return toVersionRow(row);
   }
 }
@@ -248,7 +248,7 @@ function toRow(a: InMemAgent): AgentRow {
   // Surface the mutable state into the embedded config for round-trip consistency.
   return {
     ...a.config,
-    tenant_id: a.tenant_id,
+    user_id: a.user_id,
     version: a.version,
     created_at: msToIso(a.created_at),
     updated_at: a.updated_at !== null ? msToIso(a.updated_at) : undefined,
@@ -259,7 +259,7 @@ function toRow(a: InMemAgent): AgentRow {
 function toVersionRow(v: InMemVersion): AgentVersionRow {
   return {
     agent_id: v.agent_id,
-    tenant_id: v.tenant_id,
+    user_id: v.user_id,
     version: v.version,
     snapshot: v.snapshot,
     created_at: msToIso(v.created_at),

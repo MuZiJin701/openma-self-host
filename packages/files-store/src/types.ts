@@ -4,24 +4,24 @@
 // Design choices:
 //   - FileRow holds metadata only — the R2 blob lives in FILES_BUCKET under
 //     `r2_key`. Service is intentionally R2-blind: routes own R2 PUT/GET/DELETE.
-//   - `scope` is a denormalized enum ("session" | "tenant") that mirrors the
+//   - `scope` is a denormalized enum ("session" | "user") that mirrors the
 //     session_id NULL/non-NULL state. Kept explicit so a future "agent_scope"
 //     or "user_scope" extension fits without a schema migration.
 //   - `r2_key` is stored explicitly (instead of recomputed from
-//     fileR2Key(tenant, id) every time) so the delete cascade can return the
-//     R2 keys without needing a tenant-aware helper. Also future-proofs against
+//     fileR2Key(user, id) every time) so the delete cascade can return the
+//     R2 keys without needing a user-aware helper. Also future-proofs against
 //     R2 key scheme changes (e.g. random suffixes for security).
 //   - `downloadable` is a boolean stored as INTEGER (SQLite has no BOOL).
 //     Adapter does the 0/1 ↔ false/true conversion.
 
 import type { FileRecord } from "@open-managed-agents/shared";
 
-export type FileScope = "session" | "tenant";
+export type FileScope = "session" | "user";
 
 export interface FileRow {
   id: string;
-  tenant_id: string;
-  /** NULL when scope === "tenant". */
+  user_id: string;
+  /** NULL when scope === "user". */
   session_id: string | null;
   scope: FileScope;
   filename: string;
@@ -36,7 +36,7 @@ export interface FileRow {
 
 /**
  * Map a FileRow to the public FileRecord API shape that
- * apps/main/src/routes/files.ts returns. r2_key + scope + tenant_id are
+ * apps/main/src/routes/files.ts returns. r2_key + scope + user_id are
  * server-internal — they don't show up in the API surface.
  */
 export function toFileRecord(row: FileRow): FileRecord {

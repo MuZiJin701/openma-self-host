@@ -4,10 +4,10 @@ import { buildEnvironmentRoutes, buildSessionRoutes, buildSkillRoutes } from "@o
 import { createInMemoryEnvironmentService } from "@open-managed-agents/environments-store/test-fakes";
 import { InMemorySkillService } from "@open-managed-agents/skills-store";
 
-function tenantApp(route: unknown, tenantId: string) {
+function userApp(route: unknown, userId: string) {
   const app = new Hono();
   app.use("*", async (c, next) => {
-    c.set("tenant_id", tenantId);
+    c.set("user_id", userId);
     await next();
   });
   app.route("/", route as never);
@@ -15,12 +15,12 @@ function tenantApp(route: unknown, tenantId: string) {
 }
 
 describe("self-host resource routes", () => {
-  it("supports tenant-scoped environment CRUD and archive", async () => {
+  it("supports user-scoped environment CRUD and archive", async () => {
     const { service } = createInMemoryEnvironmentService();
-    const tenantA = tenantApp(buildEnvironmentRoutes({ environments: service }), "tenant-a");
-    const tenantB = tenantApp(buildEnvironmentRoutes({ environments: service }), "tenant-b");
+    const userA = userApp(buildEnvironmentRoutes({ environments: service }), "user-a");
+    const userB = userApp(buildEnvironmentRoutes({ environments: service }), "user-b");
 
-    const created = await tenantA.request("http://test/", {
+    const created = await userA.request("http://test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "local", config: { type: "local" } }),
@@ -29,7 +29,7 @@ describe("self-host resource routes", () => {
     const environmentId = (await created.json() as { id: string }).id;
     expect(environmentId).toMatch(/^env-/);
 
-    const second = await tenantA.request("http://test/", {
+    const second = await userA.request("http://test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "another-local", config: { type: "local" } }),
@@ -39,31 +39,31 @@ describe("self-host resource routes", () => {
     expect(secondEnvironmentId).toMatch(/^env-/);
     expect(secondEnvironmentId).not.toBe(environmentId);
 
-    const listed = await tenantA.request("http://test/");
+    const listed = await userA.request("http://test/");
     expect(listed.status).toBe(200);
     expect((await listed.json() as { data: Array<{ id: string }> }).data.map((row) => row.id))
       .toEqual(expect.arrayContaining([environmentId, secondEnvironmentId]));
 
-    expect((await tenantB.request(`http://test/${environmentId}`)).status).toBe(404);
-    const updated = await tenantA.request(`http://test/${environmentId}`, {
+    expect((await userB.request(`http://test/${environmentId}`)).status).toBe(404);
+    const updated = await userA.request(`http://test/${environmentId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "local-updated", status: "ready" }),
     });
     expect((await updated.json() as { name: string }).name).toBe("local-updated");
 
-    const archived = await tenantA.request(`http://test/${environmentId}/archive`, { method: "POST" });
+    const archived = await userA.request(`http://test/${environmentId}/archive`, { method: "POST" });
     expect(archived.status).toBe(200);
-    expect((await (await tenantA.request("http://test/")).json()).data.map((row: { id: string }) => row.id))
+    expect((await (await userA.request("http://test/")).json()).data.map((row: { id: string }) => row.id))
       .toEqual([secondEnvironmentId]);
   });
 
   it("rejects non-local Environment IDs and configurations", async () => {
     const { service } = createInMemoryEnvironmentService();
     const route = buildEnvironmentRoutes({ environments: service });
-    const tenantA = tenantApp(route, "tenant-a");
+    const userA = userApp(route, "user-a");
 
-    const unsupportedConfig = await tenantA.request("http://test/", {
+    const unsupportedConfig = await userA.request("http://test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "cloud", config: { type: "cloud" } }),
@@ -74,32 +74,32 @@ describe("self-host resource routes", () => {
       environment_id: "env-cloud",
     });
 
-    const unknownId = await tenantA.request("http://test/env-cloud", { method: "GET" });
+    const unknownId = await userA.request("http://test/env-cloud", { method: "GET" });
     expect(unknownId.status).toBe(404);
   });
 
-  it("reads skill versions only within the owning tenant", async () => {
+  it("reads skill versions only within the owning user", async () => {
     const service = new InMemorySkillService();
     const route = buildSkillRoutes({ skills: service });
-    const tenantA = tenantApp(route, "tenant-a");
-    const tenantB = tenantApp(route, "tenant-b");
+    const userA = userApp(route, "user-a");
+    const userB = userApp(route, "user-b");
 
-    const created = await tenantA.request("http://test/", {
+    const created = await userA.request("http://test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "research" }),
     });
     const skillId = (await created.json() as { id: string }).id;
-    const version = await tenantA.request(`http://test/${skillId}/versions`, {
+    const version = await userA.request(`http://test/${skillId}/versions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ files: [{ filename: "SKILL.md", content: "tenant-a" }] }),
+      body: JSON.stringify({ files: [{ filename: "SKILL.md", content: "user-a" }] }),
     });
     expect(version.status).toBe(201);
-    expect((await (await tenantA.request(`http://test/${skillId}/versions/1`)).json()).files[0].content)
-      .toBe("tenant-a");
-    expect((await tenantB.request(`http://test/${skillId}`)).status).toBe(404);
-    expect((await tenantB.request(`http://test/${skillId}/versions/1`)).status).toBe(404);
+    expect((await (await userA.request(`http://test/${skillId}/versions/1`)).json()).files[0].content)
+      .toBe("user-a");
+    expect((await userB.request(`http://test/${skillId}`)).status).toBe(404);
+    expect((await userB.request(`http://test/${skillId}/versions/1`)).status).toBe(404);
   });
 
   it("rejects unsupported environments for local-runtime Agents", async () => {
@@ -108,7 +108,7 @@ describe("self-host resource routes", () => {
         agents: {
           get: async () => ({
             id: "agent-1",
-            tenant_id: "tenant-a",
+            user_id: "user-a",
             runtime_binding: null,
           }),
         },
@@ -124,9 +124,9 @@ describe("self-host resource routes", () => {
           }
         : null,
     });
-    const tenantA = tenantApp(route, "tenant-a");
+    const userA = userApp(route, "user-a");
 
-    const response = await tenantA.request("http://test/", {
+    const response = await userA.request("http://test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ agent: "agent-1", environment_id: "env-cloud" }),
@@ -136,13 +136,13 @@ describe("self-host resource routes", () => {
     expect(await response.json()).toEqual({ error: "environment_not_supported", environment_id: "env-cloud" });
   });
 
-  it("accepts a tenant-owned local Environment record that is not the fallback ID", async () => {
+  it("accepts a user-owned local Environment record that is not the fallback ID", async () => {
     const route = buildSessionRoutes({
       services: {
         agents: {
           get: async () => ({
             id: "agent-1",
-            tenant_id: "tenant-a",
+            user_id: "user-a",
             runtime_binding: null,
           }),
         },
@@ -150,7 +150,7 @@ describe("self-host resource routes", () => {
           create: async ({ environmentId }: { environmentId: string }) => ({
             session: {
               id: "session-1",
-              tenant_id: "tenant-a",
+              user_id: "user-a",
               agent_id: "agent-1",
               environment_id: environmentId,
               title: "",
@@ -171,15 +171,15 @@ describe("self-host resource routes", () => {
         config: { type: "local" },
       }),
     });
-    const tenantA = tenantApp(route, "tenant-a");
+    const userA = userApp(route, "user-a");
 
-    const response = await tenantA.request("http://test/", {
+    const response = await userA.request("http://test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent: "agent-1", environment_id: "env-tenant-a-2" }),
+      body: JSON.stringify({ agent: "agent-1", environment_id: "env-user-a-2" }),
     });
 
     expect(response.status).toBe(201);
-    expect((await response.json() as { environment_id: string }).environment_id).toBe("env-tenant-a-2");
+    expect((await response.json() as { environment_id: string }).environment_id).toBe("env-user-a-2");
   });
 });

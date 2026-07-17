@@ -82,8 +82,8 @@ RUN mkdir -p /app/data && chown -R node:node /app/data
 ENV NODE_ENV=production
 ENV PORT=8787
 ENV HOST=0.0.0.0
+ENV DATA_DIR=/app/data
 ENV DATABASE_PATH=/app/data/oma.db
-ENV SANDBOX_WORKDIR=/app/data/sandboxes
 ENV CONSOLE_DIR=/app/apps/console/dist
 EXPOSE 8787
 USER node
@@ -91,4 +91,4 @@ WORKDIR /app/apps/main-node
 
 # tsx is the entry. SIGTERM is handled by main-node/src/index.ts for
 # graceful shutdown.
-CMD ["pnpm", "start"]
+CMD ["node_modules/.bin/tsx", "src/index.ts"]

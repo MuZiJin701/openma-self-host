@@ -65,7 +65,7 @@ export interface LocalSubprocessSandboxOptions {
    * Absolute path to the directory backing per-session output deliveries
    * (the `/mnt/session/outputs/` magic dir). Required to support
    * mountSessionOutputs — when set, mountSessionOutputs symlinks
-   * <workdir>/.mnt/session/outputs → <outputsRoot>/<tenantId>/<sessionId>/.
+   * <workdir>/.mnt/session/outputs → <outputsRoot>/<userId>/<sessionId>/.
    * main-node's GET /v1/sessions/:id/outputs reads from the same root.
    * When omitted, mountSessionOutputs is a hard error (matches CF
    * behaviour without FILES_BUCKET).
@@ -84,9 +84,9 @@ interface MemoryMount {
 }
 
 interface OutputsMount {
-  tenantId: string;
+  userId: string;
   sessionId: string;
-  /** Real path the symlink targets — `<outputsRoot>/<tenantId>/<sessionId>/`. */
+  /** Real path the symlink targets — `<outputsRoot>/<userId>/<sessionId>/`. */
   targetDir: string;
   /** Workdir-relative mount path — `.mnt/session/outputs`. */
   mountRel: string;
@@ -248,7 +248,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     this.commandSecrets.push({ prefix: commandPrefix, secrets });
   }
 
-  async setOutboundContext(_opts?: { tenantId: string; sessionId: string }): Promise<void> {
+  async setOutboundContext(_opts?: { userId: string; sessionId: string }): Promise<void> {
     // Wire outbound credential injection through the oma-vault sidecar
     // (apps/oma-vault). The sidecar runs a mockttp HTTPS MITM proxy with a
     // self-signed CA; we point the subprocess at it via standard
@@ -376,7 +376,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
   }
 
   async mountSessionOutputs(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
   }): Promise<void> {
     if (!this.outputsRoot) {
@@ -385,7 +385,13 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
         `pass it to the constructor or skip outputs mounts`,
       );
     }
-    const targetDir = join(this.outputsRoot, opts.tenantId, opts.sessionId);
+    const targetDir = join(
+      this.outputsRoot,
+      encodeURIComponent(opts.userId),
+      ".openma",
+      "outputs",
+      encodeURIComponent(opts.sessionId),
+    );
     mkdirSync(targetDir, { recursive: true });
 
     const mountParent = join(this.mountRoot, ".mnt", "session");
@@ -419,7 +425,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     }
 
     this.outputsMount = {
-      tenantId: opts.tenantId,
+      userId: opts.userId,
       sessionId: opts.sessionId,
       targetDir,
       mountRel: join(".mnt", "session", "outputs"),

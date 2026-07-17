@@ -127,7 +127,7 @@ export class AgentService {
   // ============================================================
 
   async create(opts: {
-    tenantId: string;
+    userId: string;
     input: NewAgentInput;
   }): Promise<AgentRow> {
     const id = this.ids.agentId();
@@ -157,7 +157,7 @@ export class AgentService {
 
     return await this.repo.insert({
       id,
-      tenantId: opts.tenantId,
+      userId: opts.userId,
       config,
       createdAt: nowMs,
     });
@@ -172,7 +172,7 @@ export class AgentService {
    * agent has been bumped under us. Mirrors agents.ts:232-234 (POST /v1/agents/:id).
    */
   async update(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
     input: UpdateAgentInput;
     /** When set, refuse if the current version doesn't match. Mirrors POST /v1/agents/:id ?version=. */
@@ -221,7 +221,7 @@ export class AgentService {
 
   private async writeUpdatedAgent(
     opts: {
-      tenantId: string;
+      userId: string;
       agentId: string;
       input: UpdateAgentInput;
     },
@@ -233,7 +233,7 @@ export class AgentService {
     nextConfig.updated_at = msToIso(nowMs);
 
     return await this.repo.updateWithVersionSnapshot(
-      opts.tenantId,
+      opts.userId,
       opts.agentId,
       {
         config: nextConfig,
@@ -242,20 +242,20 @@ export class AgentService {
       } satisfies AgentUpdateFields,
       {
         agentId: opts.agentId,
-        tenantId: opts.tenantId,
+        userId: opts.userId,
         version: existing.version,
-        snapshot: stripTenantId(existing),
+        snapshot: stripUserId(existing),
         createdAt: nowMs,
       },
     );
   }
 
   async archive(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
   }): Promise<AgentRow> {
     await this.requireAgent(opts);
-    return this.repo.archive(opts.tenantId, opts.agentId, this.clock.nowMs());
+    return this.repo.archive(opts.userId, opts.agentId, this.clock.nowMs());
   }
 
   /**
@@ -264,11 +264,11 @@ export class AgentService {
    * checks (those live in different services).
    */
   async delete(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
   }): Promise<void> {
     await this.requireAgent(opts);
-    await this.repo.deleteWithVersions(opts.tenantId, opts.agentId);
+    await this.repo.deleteWithVersions(opts.userId, opts.agentId);
   }
 
   // ============================================================
@@ -276,24 +276,24 @@ export class AgentService {
   // ============================================================
 
   async get(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
   }): Promise<AgentRow | null> {
-    return this.repo.get(opts.tenantId, opts.agentId);
+    return this.repo.get(opts.userId, opts.agentId);
   }
 
-  /** Cross-tenant lookup by id — used by SessionDO's getAgentConfig fallback
+  /** Cross-user lookup by id — used by SessionDO's getAgentConfig fallback
    *  (session-do.ts:185). Trusts the caller to authorize since it has no
-   *  tenant scope. */
+   *  user scope. */
   async getById(opts: { agentId: string }): Promise<AgentRow | null> {
     return this.repo.getById(opts.agentId);
   }
 
   async list(opts: {
-    tenantId: string;
+    userId: string;
     includeArchived?: boolean;
   }): Promise<AgentRow[]> {
-    return this.repo.list(opts.tenantId, {
+    return this.repo.list(opts.userId, {
       includeArchived: opts.includeArchived ?? true,
     });
   }
@@ -308,7 +308,7 @@ export class AgentService {
    * never need to interpret it. The route handler propagates it as-is.
    */
   async listPage(opts: {
-    tenantId: string;
+    userId: string;
     /** Row archive state. Pass `'active'` to exclude archived, `'archived'`
      *  for only-archived, `'any'` (default) for both. Replaces the legacy
      *  `includeArchived` boolean for any 3-way intent. */
@@ -333,7 +333,7 @@ export class AgentService {
       cursor: opts.cursor,
       limit: opts.limit,
       fetch: (after, limit) =>
-        this.repo.listPage(opts.tenantId, {
+        this.repo.listPage(opts.userId, {
           status,
           limit,
           after,
@@ -348,10 +348,10 @@ export class AgentService {
   /** Cheap COUNT for /v1/stats. Default counts only non-archived rows
    *  (matches what the dashboard headline numbers represent). */
   async count(opts: {
-    tenantId: string;
+    userId: string;
     includeArchived?: boolean;
   }): Promise<number> {
-    return this.repo.count(opts.tenantId, {
+    return this.repo.count(opts.userId, {
       includeArchived: opts.includeArchived ?? false,
     });
   }
@@ -365,30 +365,30 @@ export class AgentService {
    *  the agent itself exists — the route layer's GET /:id/versions does that
    *  via its own existence check (agents.ts:286-287). */
   async listVersions(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
   }): Promise<AgentVersionRow[]> {
-    return this.repo.listVersions(opts.tenantId, opts.agentId);
+    return this.repo.listVersions(opts.userId, opts.agentId);
   }
 
   /** A specific historical snapshot. Returns null for current-version lookups
    *  (which match legacy KV — `t:{t}:agent:{id}:v{current}` was never written). */
   async getVersion(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
     version: number;
   }): Promise<AgentVersionRow | null> {
-    return this.repo.getVersion(opts.tenantId, opts.agentId, opts.version);
+    return this.repo.getVersion(opts.userId, opts.agentId, opts.version);
   }
 
   /** Like `getVersion` but throws when missing — convenience for handlers
    *  that prefer the typed-error shape. */
   async requireVersion(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
     version: number;
   }): Promise<AgentVersionRow> {
-    const row = await this.repo.getVersion(opts.tenantId, opts.agentId, opts.version);
+    const row = await this.repo.getVersion(opts.userId, opts.agentId, opts.version);
     if (!row) throw new AgentVersionNotFoundError();
     return row;
   }
@@ -398,10 +398,10 @@ export class AgentService {
   // ============================================================
 
   private async requireAgent(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
   }): Promise<AgentRow> {
-    const row = await this.repo.get(opts.tenantId, opts.agentId);
+    const row = await this.repo.get(opts.userId, opts.agentId);
     if (!row) throw new AgentNotFoundError();
     return row;
   }
@@ -423,8 +423,8 @@ export class AgentService {
   /** Apply patch fields onto a fresh copy of `existing` — does NOT bump
    *  version or updated_at (caller does that after the change check). */
   private applyUpdate(existing: AgentRow, patch: UpdateAgentInput): AgentConfig {
-    // Strip tenant_id so we round-trip pure AgentConfig back to the repo.
-    const next: AgentConfig = stripTenantId(existing);
+    // Strip user_id so we round-trip pure AgentConfig back to the repo.
+    const next: AgentConfig = stripUserId(existing);
 
     for (const key of UPDATABLE_FIELDS) {
       const value = (patch as unknown as Record<string, unknown>)[key];
@@ -461,10 +461,10 @@ export class AgentService {
 // Helpers
 // ============================================================
 
-/** AgentRow is `AgentConfig & { tenant_id }` — pull tenant_id off when
+/** AgentRow is `AgentConfig & { user_id }` — pull user_id off when
  *  round-tripping back to a pure AgentConfig (e.g. for snapshot writes). */
-function stripTenantId(row: AgentRow): AgentConfig {
-  const { tenant_id: _t, ...rest } = row;
+function stripUserId(row: AgentRow): AgentConfig {
+  const { user_id: _t, ...rest } = row;
   return rest;
 }
 

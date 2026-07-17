@@ -24,7 +24,7 @@ import type { SessionResourceRow, SessionRow } from "./types";
 
 interface InMemSession {
   id: string;
-  tenant_id: string;
+  user_id: string;
   agent_id: string;
   environment_id: string;
   title: string;
@@ -57,7 +57,7 @@ export class InMemorySessionRepo implements SessionRepo {
   ): Promise<{ session: SessionRow; resources: SessionResourceRow[] }> {
     const row: InMemSession = {
       id: session.id,
-      tenant_id: session.tenantId,
+      user_id: session.userId,
       agent_id: session.agentId,
       environment_id: session.environmentId,
       title: session.title,
@@ -88,9 +88,9 @@ export class InMemorySessionRepo implements SessionRepo {
     return { session: toSessionRow(row), resources: insertedResources };
   }
 
-  async get(tenantId: string, sessionId: string): Promise<SessionRow | null> {
+  async get(userId: string, sessionId: string): Promise<SessionRow | null> {
     const row = this.sessions.get(sessionId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return toSessionRow(row);
   }
 
@@ -99,8 +99,8 @@ export class InMemorySessionRepo implements SessionRepo {
     return row ? toSessionRow(row) : null;
   }
 
-  async list(tenantId: string, opts: SessionListOptions): Promise<SessionRow[]> {
-    let rows = Array.from(this.sessions.values()).filter((s) => s.tenant_id === tenantId);
+  async list(userId: string, opts: SessionListOptions): Promise<SessionRow[]> {
+    let rows = Array.from(this.sessions.values()).filter((s) => s.user_id === userId);
     if (opts.agentId) rows = rows.filter((s) => s.agent_id === opts.agentId);
     if (!opts.includeArchived) rows = rows.filter((s) => s.archived_at === null);
     rows.sort((a, b) => (opts.order === "asc" ? a.created_at - b.created_at : b.created_at - a.created_at));
@@ -108,7 +108,7 @@ export class InMemorySessionRepo implements SessionRepo {
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       agentId?: string;
       includeArchived: boolean;
@@ -119,7 +119,7 @@ export class InMemorySessionRepo implements SessionRepo {
     },
   ): Promise<{ items: SessionRow[]; hasMore: boolean }> {
     let rows = Array.from(this.sessions.values()).filter(
-      (s) => s.tenant_id === tenantId,
+      (s) => s.user_id === userId,
     );
     if (opts.agentId) rows = rows.filter((s) => s.agent_id === opts.agentId);
     if (!opts.includeArchived) rows = rows.filter((s) => s.archived_at === null);
@@ -142,10 +142,10 @@ export class InMemorySessionRepo implements SessionRepo {
     };
   }
 
-  async hasActiveByAgent(tenantId: string, agentId: string): Promise<boolean> {
+  async hasActiveByAgent(userId: string, agentId: string): Promise<boolean> {
     for (const s of this.sessions.values()) {
       if (
-        s.tenant_id === tenantId &&
+        s.user_id === userId &&
         s.agent_id === agentId &&
         s.archived_at === null
       ) {
@@ -155,10 +155,10 @@ export class InMemorySessionRepo implements SessionRepo {
     return false;
   }
 
-  async hasActiveByEnvironment(tenantId: string, environmentId: string): Promise<boolean> {
+  async hasActiveByEnvironment(userId: string, environmentId: string): Promise<boolean> {
     for (const s of this.sessions.values()) {
       if (
-        s.tenant_id === tenantId &&
+        s.user_id === userId &&
         s.environment_id === environmentId &&
         s.archived_at === null
       ) {
@@ -169,22 +169,22 @@ export class InMemorySessionRepo implements SessionRepo {
   }
 
   async count(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<number> {
     return Array.from(this.sessions.values())
-      .filter((s) => s.tenant_id === tenantId)
+      .filter((s) => s.user_id === userId)
       .filter((s) => opts.includeArchived || s.archived_at === null)
       .length;
   }
 
   async update(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     update: SessionUpdateFields,
   ): Promise<SessionRow> {
     const row = this.sessions.get(sessionId);
-    if (!row || row.tenant_id !== tenantId) throw new SessionNotFoundError();
+    if (!row || row.user_id !== userId) throw new SessionNotFoundError();
     if (update.title !== undefined) row.title = update.title;
     if (update.status !== undefined) row.status = update.status;
     if (update.metadata !== undefined) row.metadata = update.metadata;
@@ -195,30 +195,30 @@ export class InMemorySessionRepo implements SessionRepo {
   }
 
   async archive(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     archivedAt: number,
   ): Promise<SessionRow> {
     const row = this.sessions.get(sessionId);
-    if (!row || row.tenant_id !== tenantId) throw new SessionNotFoundError();
+    if (!row || row.user_id !== userId) throw new SessionNotFoundError();
     row.archived_at = archivedAt;
     row.updated_at = archivedAt;
     return toSessionRow(row);
   }
 
-  async deleteWithResources(tenantId: string, sessionId: string): Promise<void> {
+  async deleteWithResources(userId: string, sessionId: string): Promise<void> {
     const row = this.sessions.get(sessionId);
-    if (!row || row.tenant_id !== tenantId) return;
+    if (!row || row.user_id !== userId) return;
     this.sessions.delete(sessionId);
     for (const [id, r] of this.resources.entries()) {
       if (r.session_id === sessionId) this.resources.delete(id);
     }
   }
 
-  async deleteByAgent(tenantId: string, agentId: string): Promise<number> {
+  async deleteByAgent(userId: string, agentId: string): Promise<number> {
     const sessionsToDelete: string[] = [];
     for (const s of this.sessions.values()) {
-      if (s.tenant_id === tenantId && s.agent_id === agentId) {
+      if (s.user_id === userId && s.agent_id === agentId) {
         sessionsToDelete.push(s.id);
       }
     }
@@ -364,7 +364,7 @@ export function createInMemorySessionService(opts?: {
 function toSessionRow(s: InMemSession): SessionRow {
   return {
     id: s.id,
-    tenant_id: s.tenant_id,
+    user_id: s.user_id,
     agent_id: s.agent_id,
     environment_id: s.environment_id,
     title: s.title,

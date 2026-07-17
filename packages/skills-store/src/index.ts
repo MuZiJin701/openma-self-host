@@ -18,7 +18,7 @@ export interface SkillFile {
 
 export interface Skill {
   id: string;
-  tenant_id: string;
+  user_id: string;
   name: string;
   description: string | null;
   latest_version: string | null;
@@ -28,7 +28,7 @@ export interface Skill {
 
 export interface SkillVersion {
   skill_id: string;
-  tenant_id: string;
+  user_id: string;
   version: string;
   description: string | null;
   files: SkillFile[];
@@ -36,13 +36,13 @@ export interface SkillVersion {
 }
 
 export interface CreateSkillInput {
-  tenantId: string;
+  userId: string;
   name: string;
   description?: string | null;
 }
 
 export interface CreateSkillVersionInput {
-  tenantId: string;
+  userId: string;
   skillId: string;
   version?: string;
   description?: string | null;
@@ -51,11 +51,11 @@ export interface CreateSkillVersionInput {
 
 export interface SkillService {
   create(input: CreateSkillInput): Promise<Skill>;
-  list(tenantId: string): Promise<Skill[]>;
-  get(tenantId: string, skillId: string): Promise<Skill | null>;
+  list(userId: string): Promise<Skill[]>;
+  get(userId: string, skillId: string): Promise<Skill | null>;
   createVersion(input: CreateSkillVersionInput): Promise<SkillVersion>;
-  getVersion(tenantId: string, skillId: string, version: string): Promise<SkillVersion | null>;
-  archive(tenantId: string, skillId: string): Promise<void>;
+  getVersion(userId: string, skillId: string, version: string): Promise<SkillVersion | null>;
+  archive(userId: string, skillId: string): Promise<void>;
 }
 
 export class SkillNotFoundError extends Error {
@@ -75,31 +75,31 @@ export class InMemorySkillService implements SkillService {
 
   async create(input: CreateSkillInput): Promise<Skill> {
     const row: Skill = {
-      id: id("skill"), tenant_id: input.tenantId, name: input.name,
+      id: id("skill"), user_id: input.userId, name: input.name,
       description: input.description ?? null, latest_version: null,
       archived_at: null, created_at: now(),
     };
-    this.skills.set(`${row.tenant_id}:${row.id}`, row);
+    this.skills.set(`${row.user_id}:${row.id}`, row);
     return { ...row };
   }
 
-  async list(tenantId: string): Promise<Skill[]> {
-    return [...this.skills.values()].filter((s) => s.tenant_id === tenantId).map((s) => ({ ...s }));
+  async list(userId: string): Promise<Skill[]> {
+    return [...this.skills.values()].filter((s) => s.user_id === userId).map((s) => ({ ...s }));
   }
 
-  async get(tenantId: string, skillId: string): Promise<Skill | null> {
-    const row = this.skills.get(`${tenantId}:${skillId}`);
+  async get(userId: string, skillId: string): Promise<Skill | null> {
+    const row = this.skills.get(`${userId}:${skillId}`);
     return row ? { ...row } : null;
   }
 
   async createVersion(input: CreateSkillVersionInput): Promise<SkillVersion> {
-    const skill = this.skills.get(`${input.tenantId}:${input.skillId}`);
+    const skill = this.skills.get(`${input.userId}:${input.skillId}`);
     if (!skill) throw new SkillNotFoundError();
     const version = input.version ?? String(Number(skill.latest_version ?? "0") + 1);
-    const key = `${input.tenantId}:${input.skillId}:${version}`;
+    const key = `${input.userId}:${input.skillId}:${version}`;
     if (this.versions.has(key)) throw new SkillVersionExistsError();
     const row: SkillVersion = {
-      tenant_id: input.tenantId, skill_id: input.skillId, version,
+      user_id: input.userId, skill_id: input.skillId, version,
       description: input.description ?? null,
       files: input.files.map((file) => ({
         filename: file.filename,
@@ -114,13 +114,13 @@ export class InMemorySkillService implements SkillService {
     return cloneVersion(row);
   }
 
-  async getVersion(tenantId: string, skillId: string, version: string): Promise<SkillVersion | null> {
-    const row = this.versions.get(`${tenantId}:${skillId}:${version}`);
+  async getVersion(userId: string, skillId: string, version: string): Promise<SkillVersion | null> {
+    const row = this.versions.get(`${userId}:${skillId}:${version}`);
     return row ? cloneVersion(row) : null;
   }
 
-  async archive(tenantId: string, skillId: string): Promise<void> {
-    const row = this.skills.get(`${tenantId}:${skillId}`);
+  async archive(userId: string, skillId: string): Promise<void> {
+    const row = this.skills.get(`${userId}:${skillId}`);
     if (!row) throw new SkillNotFoundError();
     row.archived_at = now();
   }
@@ -133,37 +133,37 @@ export class SqlSkillService implements SkillService {
   async create(input: CreateSkillInput): Promise<Skill> {
     const skillId = id("skill");
     await this.sql.prepare(
-      `INSERT INTO skills (id, tenant_id, name, description, latest_version, archived_at, created_at)
+      `INSERT INTO skills (id, user_id, name, description, latest_version, archived_at, created_at)
        VALUES (?, ?, ?, ?, NULL, NULL, ?)`
-    ).bind(skillId, input.tenantId, input.name, input.description ?? null, Date.now()).run();
-    const row = await this.get(input.tenantId, skillId);
+    ).bind(skillId, input.userId, input.name, input.description ?? null, Date.now()).run();
+    const row = await this.get(input.userId, skillId);
     if (!row) throw new Error("skill vanished after insert");
     return row;
   }
 
-  async list(tenantId: string): Promise<Skill[]> {
+  async list(userId: string): Promise<Skill[]> {
     const result = await this.sql.prepare(
-      `SELECT id, tenant_id, name, description, latest_version, archived_at, created_at
-         FROM skills WHERE tenant_id = ? ORDER BY created_at ASC, id ASC`
-    ).bind(tenantId).all<DbSkill>();
+      `SELECT id, user_id, name, description, latest_version, archived_at, created_at
+         FROM skills WHERE user_id = ? ORDER BY created_at ASC, id ASC`
+    ).bind(userId).all<DbSkill>();
     return (result.results ?? []).map(toSkill);
   }
 
-  async get(tenantId: string, skillId: string): Promise<Skill | null> {
+  async get(userId: string, skillId: string): Promise<Skill | null> {
     const row = await this.sql.prepare(
-      `SELECT id, tenant_id, name, description, latest_version, archived_at, created_at
-         FROM skills WHERE tenant_id = ? AND id = ?`
-    ).bind(tenantId, skillId).first<DbSkill>();
+      `SELECT id, user_id, name, description, latest_version, archived_at, created_at
+         FROM skills WHERE user_id = ? AND id = ?`
+    ).bind(userId, skillId).first<DbSkill>();
     return row ? toSkill(row) : null;
   }
 
   async createVersion(input: CreateSkillVersionInput): Promise<SkillVersion> {
-    const skill = await this.get(input.tenantId, input.skillId);
+    const skill = await this.get(input.userId, input.skillId);
     if (!skill) throw new SkillNotFoundError();
     const next = input.version ?? String(Number(skill.latest_version ?? "0") + 1);
     const existing = await this.sql.prepare(
-      `SELECT 1 AS one FROM skill_versions WHERE tenant_id = ? AND skill_id = ? AND version = ?`
-    ).bind(input.tenantId, input.skillId, next).first();
+      `SELECT 1 AS one FROM skill_versions WHERE user_id = ? AND skill_id = ? AND version = ?`
+    ).bind(input.userId, input.skillId, next).first();
     if (existing) throw new SkillVersionExistsError();
 
     const stamp = Date.now();
@@ -172,37 +172,37 @@ export class SqlSkillService implements SkillService {
       validateFilename(file.filename);
       const contentType = file.contentType ?? "text/plain";
       const bytes = typeof file.content === "string" ? new TextEncoder().encode(file.content) : file.content;
-      const key = skillFileR2Key(input.tenantId, input.skillId, next, file.filename);
+      const key = skillFileR2Key(input.userId, input.skillId, next, file.filename);
       await this.blobs.put(key, bytes, { httpMetadata: { contentType } });
       metadata.push({ file, key, size: bytes.byteLength, contentType });
     }
     const statements = [this.sql.prepare(
-      `INSERT INTO skill_versions (tenant_id, skill_id, version, description, created_at)
+      `INSERT INTO skill_versions (user_id, skill_id, version, description, created_at)
        VALUES (?, ?, ?, ?, ?)`
-    ).bind(input.tenantId, input.skillId, next, input.description ?? null, stamp)];
+    ).bind(input.userId, input.skillId, next, input.description ?? null, stamp)];
     statements.push(...metadata.map((item) => this.sql.prepare(
-      `INSERT INTO skill_blobs (tenant_id, skill_id, version, filename, storage_key, content_type, size)
+      `INSERT INTO skill_blobs (user_id, skill_id, version, filename, storage_key, content_type, size)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(input.tenantId, input.skillId, next, item.file.filename, item.key, item.contentType, item.size)));
+    ).bind(input.userId, input.skillId, next, item.file.filename, item.key, item.contentType, item.size)));
     statements.push(this.sql.prepare(
-      `UPDATE skills SET latest_version = ? WHERE tenant_id = ? AND id = ?`
-    ).bind(next, input.tenantId, input.skillId));
+      `UPDATE skills SET latest_version = ? WHERE user_id = ? AND id = ?`
+    ).bind(next, input.userId, input.skillId));
     await this.sql.batch(statements);
-    const row = await this.getVersion(input.tenantId, input.skillId, next);
+    const row = await this.getVersion(input.userId, input.skillId, next);
     if (!row) throw new Error("skill version vanished after insert");
     return row;
   }
 
-  async getVersion(tenantId: string, skillId: string, version: string): Promise<SkillVersion | null> {
+  async getVersion(userId: string, skillId: string, version: string): Promise<SkillVersion | null> {
     const row = await this.sql.prepare(
-      `SELECT tenant_id, skill_id, version, description, created_at
-         FROM skill_versions WHERE tenant_id = ? AND skill_id = ? AND version = ?`
-    ).bind(tenantId, skillId, version).first<DbVersion>();
+      `SELECT user_id, skill_id, version, description, created_at
+         FROM skill_versions WHERE user_id = ? AND skill_id = ? AND version = ?`
+    ).bind(userId, skillId, version).first<DbVersion>();
     if (!row) return null;
     const files = await this.sql.prepare(
       `SELECT filename, storage_key, content_type, size FROM skill_blobs
-         WHERE tenant_id = ? AND skill_id = ? AND version = ? ORDER BY filename`
-    ).bind(tenantId, skillId, version).all<DbBlob>();
+         WHERE user_id = ? AND skill_id = ? AND version = ? ORDER BY filename`
+    ).bind(userId, skillId, version).all<DbBlob>();
     const content = await Promise.all((files.results ?? []).map(async (file) => {
       const object = await this.blobs.get(file.storage_key);
       return { filename: file.filename, content: object ? await object.text() : "", content_type: file.content_type, size: file.size };
@@ -210,16 +210,16 @@ export class SqlSkillService implements SkillService {
     return { ...toVersion(row), files: content };
   }
 
-  async archive(tenantId: string, skillId: string): Promise<void> {
-    const skill = await this.get(tenantId, skillId);
+  async archive(userId: string, skillId: string): Promise<void> {
+    const skill = await this.get(userId, skillId);
     if (!skill) throw new SkillNotFoundError();
-    await this.sql.prepare(`UPDATE skills SET archived_at = ? WHERE tenant_id = ? AND id = ?`)
-      .bind(Date.now(), tenantId, skillId).run();
+    await this.sql.prepare(`UPDATE skills SET archived_at = ? WHERE user_id = ? AND id = ?`)
+      .bind(Date.now(), userId, skillId).run();
   }
 }
 
-interface DbSkill { id: string; tenant_id: string; name: string; description: string | null; latest_version: string | null; archived_at: number | null; created_at: number; }
-interface DbVersion { tenant_id: string; skill_id: string; version: string; description: string | null; created_at: number; }
+interface DbSkill { id: string; user_id: string; name: string; description: string | null; latest_version: string | null; archived_at: number | null; created_at: number; }
+interface DbVersion { user_id: string; skill_id: string; version: string; description: string | null; created_at: number; }
 interface DbBlob { filename: string; storage_key: string; content_type: string; size: number; }
 
 function toSkill(row: DbSkill): Skill {

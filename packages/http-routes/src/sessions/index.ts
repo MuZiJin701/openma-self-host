@@ -31,7 +31,7 @@ import type { RouteServicesArg } from "../types";
 import { resolveServices } from "../types";
 
 interface Vars {
-  Variables: { tenant_id: string; user_id?: string };
+  Variables: { user_id: string };
 }
 
 const ALLOWED_EVENT_TYPES = new Set<string>([
@@ -56,10 +56,10 @@ interface BlobObjectListing {
 
 export interface OutputsAdapter {
   /** Listing for GET /v1/sessions/:id/outputs. */
-  list(tenantId: string, sessionId: string): Promise<BlobObjectListing[] | null>;
+  list(userId: string, sessionId: string): Promise<BlobObjectListing[] | null>;
   /** Streaming download for GET /v1/sessions/:id/outputs/:filename. */
   read(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     filename: string,
   ): Promise<{
@@ -68,26 +68,26 @@ export interface OutputsAdapter {
     contentType: string;
   } | null>;
   /** Cascade-delete on session DELETE — best-effort. */
-  deleteAll(tenantId: string, sessionId: string): Promise<void>;
+  deleteAll(userId: string, sessionId: string): Promise<void>;
 }
 
 export interface SessionLifecycleHooks {
   /** Pre-create gate (USAGE_METER.canStartSandbox). Returns null to
    *  proceed; { status, body } to short-circuit. */
   preCreateGate?: (input: {
-    tenantId: string;
+    userId: string;
     agentId: string;
     isLocalRuntime: boolean;
   }) => Promise<{ status: number; body: unknown } | null>;
   /** Refresh credentials for the given vault set and return warning events. */
   refreshSessionCredentials?: (input: {
-    tenantId: string;
+    userId: string;
     agentId: string;
     vaultIds: string[];
   }) => Promise<SessionEvent[]>;
   /** Per-session daily-cap + per-minute rate-limit on session create. */
   preCreateRateLimit?: (input: {
-    tenantId: string;
+    userId: string;
   }) => Promise<{ status: number; body: unknown } | null>;
   /** Best-effort daemon dispose forward (CF RuntimeRoom). Called on DELETE. */
   notifyDaemonDispose?: (input: {
@@ -98,14 +98,14 @@ export interface SessionLifecycleHooks {
    *  for the sandbox. CF: reads bytes from FILES_BUCKET. Node: returns
    *  blocks unchanged (file_id resolution lands in the Node port later). */
   resolveFileIds?: (input: {
-    tenantId: string;
+    userId: string;
     blocks: ContentBlock[];
   }) => Promise<{ blocks: ContentBlock[]; mountFileIds: string[] }>;
   /** Copy a file from the global filesBlob into a per-session scope on
    *  POST /v1/sessions resources. CF: R2 copy. Node: filesystem copy
    *  or alias. */
   cloneSessionFile?: (input: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     sourceFileId: string;
   }) => Promise<{
@@ -115,18 +115,18 @@ export interface SessionLifecycleHooks {
     sizeBytes: number;
   } | null>;
   fileExists?: (input: {
-    tenantId: string;
+    userId: string;
     fileId: string;
   }) => Promise<boolean>;
   /** Delete a session's blob storage (R2 prefix or local files) on
    *  session DELETE. */
   cascadeDeleteFiles?: (input: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
   }) => Promise<void>;
   /** Promote a sandbox path to a first-class file_id (POST /sessions/:id/files). */
   promoteSandboxFile?: (input: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     sandboxPath: string;
     filename: string;
@@ -138,13 +138,13 @@ export interface SessionLifecycleHooks {
 
 export interface SessionRoutesDeps {
   services: RouteServicesArg;
-  /** Per-request SessionRouter — CF resolves per-tenant; Node returns
+  /** Per-request SessionRouter — CF resolves per-user; Node returns
    *  the singleton router built at process start. */
   router: SessionRouter | ((c: Context) => SessionRouter);
   /** Environment lookup for session create. Returns the snapshot the
    *  runtime needs at /init. */
   loadEnvironment?: (input: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
   }) => Promise<EnvironmentConfig | null>;
   /** Local-runtime sentinel — cloud sessions require explicit env_id. */
@@ -154,7 +154,7 @@ export interface SessionRoutesDeps {
   /** Vault credential bundling for /init. Both runtimes read from
    *  services.credentials but we keep it pluggable for future variants. */
   fetchVaultCredentials?: (input: {
-    tenantId: string;
+    userId: string;
     vaultIds: string[];
   }) => Promise<Array<{ vault_id: string; credentials: CredentialConfig[] }>>;
   /** Outputs surface — CF wraps R2; Node wraps the local FS in
@@ -223,7 +223,7 @@ function snapshotToSessionAgent(
 
 function toApiSession(row: {
   id: string;
-  tenant_id?: string;
+  user_id?: string;
   agent_id: string;
   agent_snapshot?: AgentConfig | null;
   environment_id?: string;
@@ -238,7 +238,7 @@ function toApiSession(row: {
   terminated_at?: string | null;
 }): Record<string, unknown> {
   const {
-    tenant_id: _t,
+    user_id: _t,
     agent_id,
     agent_snapshot,
     environment_snapshot: _es,
@@ -275,10 +275,10 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
   app.post("/", async (c) => {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
-    const t = c.var.tenant_id;
+    const t = c.var.user_id;
 
     if (deps.lifecycle?.preCreateRateLimit) {
-      const r = await deps.lifecycle.preCreateRateLimit({ tenantId: t });
+      const r = await deps.lifecycle.preCreateRateLimit({ userId: t });
       if (r) return c.json(r.body as object, r.status as 429);
     }
 
@@ -323,14 +323,14 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       }
     }
 
-    const agentRow = await services.agents.get({ tenantId: t, agentId });
+    const agentRow = await services.agents.get({ userId: t, agentId });
     if (!agentRow) return c.json({ error: "Agent not found" }, 404);
 
     const agentIsLocalRuntime = Boolean(deps.forceLocalRuntime || agentRow.runtime_binding);
 
     if (deps.lifecycle?.preCreateGate) {
       const gate = await deps.lifecycle.preCreateGate({
-        tenantId: t,
+        userId: t,
         agentId,
         isLocalRuntime: agentIsLocalRuntime,
       });
@@ -345,9 +345,9 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       envId = deps.localRuntimeEnvId ?? "env_local_runtime";
     }
 
-    const { tenant_id: _atid, ...agentSnapshot } = agentRow;
+    const { user_id: _atid, ...agentSnapshot } = agentRow;
     const envSnap = deps.loadEnvironment
-      ? await deps.loadEnvironment({ tenantId: t, environmentId: envId })
+      ? await deps.loadEnvironment({ userId: t, environmentId: envId })
       : null;
     if (deps.loadEnvironment && !envSnap) {
       return c.json({ error: "Environment not found" }, 404);
@@ -359,14 +359,14 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
 
     const refreshEvents = deps.lifecycle?.refreshSessionCredentials
       ? await deps.lifecycle.refreshSessionCredentials({
-          tenantId: t,
+          userId: t,
           agentId,
           vaultIds,
         })
       : [];
 
     const vaultCreds = deps.fetchVaultCredentials
-      ? await deps.fetchVaultCredentials({ tenantId: t, vaultIds })
+      ? await deps.fetchVaultCredentials({ userId: t, vaultIds })
       : [];
 
     // Build initial resource inputs (non-file).
@@ -395,7 +395,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     let createdResources: Array<{ id: string; type: string; resource: SessionResource }>;
     try {
       const result = await services.sessions.create({
-        tenantId: t,
+        userId: t,
         agentId,
         environmentId: envId,
         title: body.title ?? "",
@@ -416,7 +416,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       agentId,
       environmentId: envId,
       title: body.title ?? "",
-      tenantId: t,
+      userId: t,
       vaultIds,
       agentSnapshot: agentSnapshot as AgentConfig,
       environmentSnapshot: envSnap ?? undefined,
@@ -432,14 +432,14 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       for (const res of body.resources ?? []) {
         if (res.type === "file" && res.file_id) {
           const cloned = await deps.lifecycle.cloneSessionFile({
-            tenantId: t,
+            userId: t,
             sessionId,
             sourceFileId: res.file_id,
           });
           if (cloned) {
             try {
               const added = await services.sessions.addResource({
-                tenantId: t,
+                userId: t,
                 sessionId,
                 resource: {
                   type: "file",
@@ -501,7 +501,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     }
 
     const page = await services.sessions.listPage({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       agentId: agentIdFilter,
       limit,
       cursor: cursor ?? undefined,
@@ -520,7 +520,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -539,7 +539,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     try {
       const sess = await services.sessions.archive({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: c.req.param("id"),
       });
       return c.json(toApiSession(sess as never));
@@ -556,7 +556,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     }>();
     try {
       const updated = await services.sessions.update({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: c.req.param("id"),
         title: body.title,
         metadata: body.metadata,
@@ -571,8 +571,8 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
-    const t = c.var.tenant_id;
-    const sess = await services.sessions.get({ tenantId: t, sessionId: id });
+    const t = c.var.user_id;
+    const sess = await services.sessions.get({ userId: t, sessionId: id });
     if (!sess) return c.json({ error: "Session not found" }, 404);
 
     // Best-effort runtime teardown — never blocks the row delete.
@@ -588,14 +588,14 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     }
 
     try {
-      await services.sessions.delete({ tenantId: t, sessionId: id });
+      await services.sessions.delete({ userId: t, sessionId: id });
     } catch (err) {
       return mapSessionError(c, err);
     }
 
     if (deps.lifecycle?.cascadeDeleteFiles) {
       await deps.lifecycle
-        .cascadeDeleteFiles({ tenantId: t, sessionId: id })
+        .cascadeDeleteFiles({ userId: t, sessionId: id })
         .catch((err) => console.warn("[sessions] cascade-delete failed:", err));
     }
 
@@ -607,8 +607,8 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
-    const t = c.var.tenant_id;
-    const sess = await services.sessions.get({ tenantId: t, sessionId: id });
+    const t = c.var.user_id;
+    const sess = await services.sessions.get({ userId: t, sessionId: id });
     if (!sess) return c.json({ error: "Session not found" }, 404);
     if ((sess as unknown as { archived_at?: string | null }).archived_at) {
       return c.json({ error: "Session is archived and cannot receive new events" }, 409);
@@ -633,7 +633,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
         if (Array.isArray(e.content)) {
           try {
             const { blocks, mountFileIds } = await deps.lifecycle.resolveFileIds({
-              tenantId: t,
+              userId: t,
               blocks: e.content,
             });
             outgoing = {
@@ -663,8 +663,8 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
-    const t = c.var.tenant_id;
-    const sess = await services.sessions.get({ tenantId: t, sessionId: id });
+    const t = c.var.user_id;
+    const sess = await services.sessions.get({ userId: t, sessionId: id });
     if (!sess) return c.json({ error: "Session not found" }, 404);
     const body = await c.req
       .json<{ content: string | ContentBlock[] }>()
@@ -758,7 +758,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const id = c.req.param("id");
     const accept = c.req.header("Accept") || "";
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -781,7 +781,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -793,7 +793,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -806,7 +806,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -815,7 +815,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
         fetchEnvironmentConfig: () =>
           deps.loadEnvironment
             ? deps.loadEnvironment({
-                tenantId: c.var.tenant_id,
+                userId: c.var.user_id,
                 environmentId: (sess as unknown as { environment_id: string }).environment_id,
               })
             : Promise.resolve(null),
@@ -834,9 +834,9 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
   app.get("/:id/pending", async (c) => {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
-    const tenantId = c.var.tenant_id;
+    const userId = c.var.user_id;
     const sessionId = c.req.param("id");
-    const sess = await services.sessions.get({ tenantId, sessionId });
+    const sess = await services.sessions.get({ userId, sessionId });
     if (!sess) return c.json({ error: "Session not found" }, 404);
     const url = new URL(c.req.url);
     const result = await router.getPending(sessionId, { rawSearch: url.search });
@@ -853,12 +853,12 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
   app.get("/:id/llm-calls/:event_id", async (c) => {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
-    const tenantId = c.var.tenant_id;
+    const userId = c.var.user_id;
     const sessionId = c.req.param("id");
     const eventId = c.req.param("event_id");
-    const sess = await services.sessions.get({ tenantId, sessionId });
+    const sess = await services.sessions.get({ userId, sessionId });
     if (!sess) return c.json({ error: "Session not found" }, 404);
-    const result = await router.getLlmCallBody(tenantId, sessionId, eventId);
+    const result = await router.getLlmCallBody(userId, sessionId, eventId);
     return new Response(result.body, {
       status: result.status,
       headers: {
@@ -883,7 +883,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -900,7 +900,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -924,8 +924,8 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
-    const t = c.var.tenant_id;
-    const sess = await services.sessions.get({ tenantId: t, sessionId: id });
+    const t = c.var.user_id;
+    const sess = await services.sessions.get({ userId: t, sessionId: id });
     if (!sess) return c.json({ error: "Session not found" }, 404);
     const body = await c.req.json<{
       path: string;
@@ -949,7 +949,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const mediaType = body.media_type || guess[ext] || "application/octet-stream";
     const downloadable = body.downloadable === undefined ? true : body.downloadable === true;
     const row = await deps.lifecycle.promoteSandboxFile({
-      tenantId: t,
+      userId: t,
       sessionId: id,
       sandboxPath: body.path,
       filename,
@@ -964,7 +964,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
   app.post("/:id/resources", async (c) => {
     const services = resolveServices(deps.services, c);
     const sessionId = c.req.param("id");
-    const t = c.var.tenant_id;
+    const t = c.var.user_id;
     const body = await c.req.json<{
       type: "file" | "memory_store";
       file_id?: string;
@@ -984,13 +984,13 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       let fileId = body.file_id;
       if (body.type === "file" && body.file_id && deps.lifecycle?.fileExists) {
         const exists = await deps.lifecycle.fileExists({
-          tenantId: t,
+          userId: t,
           fileId: body.file_id,
         });
         if (!exists) return c.json({ error: "File not found" }, 404);
       }
       const added = await services.sessions.addResource({
-        tenantId: t,
+        userId: t,
         sessionId,
         resource: {
           type: body.type,
@@ -1019,7 +1019,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     try {
       const rs = await services.sessions.listResources({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: c.req.param("id"),
       });
       return c.json({ data: rs.map((r) => r.resource) });
@@ -1032,7 +1032,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     try {
       const row = await services.sessions.getResource({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: c.req.param("id"),
         resourceId: c.req.param("resource_id"),
       });
@@ -1051,7 +1051,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
         return c.json({ error: "resource body with `type` field is required" }, 400);
       }
       const row = await services.sessions.updateResource({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: c.req.param("id"),
         resourceId: c.req.param("resource_id"),
         resource: body,
@@ -1066,7 +1066,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const services = resolveServices(deps.services, c);
     try {
       await services.sessions.deleteResource({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: c.req.param("id"),
         resourceId: c.req.param("resource_id"),
       });
@@ -1082,7 +1082,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -1095,7 +1095,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -1111,7 +1111,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -1127,7 +1127,7 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     const router = resolveRouter(deps.router, c);
     const id = c.req.param("id");
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
@@ -1152,8 +1152,8 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
     if (!deps.outputs) return c.json({ data: [], has_more: false });
     const services = resolveServices(deps.services, c);
     const id = c.req.param("id");
-    const t = c.var.tenant_id;
-    const sess = await services.sessions.get({ tenantId: t, sessionId: id });
+    const t = c.var.user_id;
+    const sess = await services.sessions.get({ userId: t, sessionId: id });
     if (!sess) return c.json({ error: "Session not found" }, 404);
     const data = await deps.outputs.list(t, id);
     return c.json({ data: data ?? [], has_more: false });
@@ -1168,11 +1168,11 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       return c.json({ error: "Invalid filename" }, 400);
     }
     const sess = await services.sessions.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       sessionId: id,
     });
     if (!sess) return c.json({ error: "Session not found" }, 404);
-    const obj = await deps.outputs.read(c.var.tenant_id, id, filename);
+    const obj = await deps.outputs.read(c.var.user_id, id, filename);
     if (!obj) return c.json({ error: "Output file not found" }, 404);
     return new Response(obj.body, {
       headers: {

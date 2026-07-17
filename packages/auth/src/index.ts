@@ -1,18 +1,14 @@
 // Runtime-agnostic auth Hono middleware.
 //
-// Resolution priority (matches both apps/main/src/auth.ts and
-// apps/main-node/src/auth/middleware.ts pre-extract):
+// Resolution priority:
 //
-//   1. AUTH_DISABLED → tenant_id="default", user_id undefined.
-//   2. x-api-key header → resolveApiKey() → {tenant_id, user_id?}.
-//   3. Cookie session → resolveSession() → {user_id} → tenant via
-//      x-active-tenant (validated against membership) or
-//      defaultTenantForUser → ensureTenantForUser self-heal.
+//   1. AUTH_DISABLED → user_id="usr_local".
+//   2. x-api-key header → resolveApiKey() → {user_id}.
+//   3. Cookie session → resolveSession() → {user_id}.
 //   4. Otherwise 401.
 //
-// Resolvers are runtime-injected: CF passes resolvers backed by D1
-// + better-auth + KV-hashed apikey lookup; Node passes the same shape
-// backed by SqlClient + a new api_keys table + better-auth on PG/sqlite.
+// The middleware is intentionally user-scoped only. It does not resolve,
+// validate or repair application state.
 
 import { createMiddleware } from "hono/factory";
 
@@ -23,23 +19,16 @@ export interface AuthSession {
 }
 
 export interface ApiKeyResolution {
-  tenantId: string;
-  userId?: string;
+  userId: string;
 }
 
 export interface AuthMiddlewareDeps {
-  /** True bypasses auth entirely; tenant_id="default". */
+  /** True bypasses auth entirely and injects the local test user. */
   disabled: boolean;
   /** Resolve a session cookie → user info. Return null on miss. */
   resolveSession(headers: Headers): Promise<AuthSession | null>;
-  /** Resolve an x-api-key value → tenant + optional user. Null on miss. */
+  /** Resolve an x-api-key value → user. Null on miss. */
   resolveApiKey(apiKey: string): Promise<ApiKeyResolution | null>;
-  /** Look up the user's default tenant (first membership by created_at). */
-  defaultTenantForUser(userId: string): Promise<string | null>;
-  /** Validate (user, tenant) membership — used for x-active-tenant. */
-  hasMembership(userId: string, tenantId: string): Promise<boolean>;
-  /** Self-heal: mint a tenant for a logged-in user with no memberships. */
-  ensureTenantForUser(session: AuthSession): Promise<string>;
   /** Path-prefix predicate — request paths matching are allowed through
    *  without auth. Default: /health and /auth/*.  Used for /v1/internal
    *  (header-secret) and /v1/mcp-proxy (Bearer-on-every-request). */
@@ -52,12 +41,12 @@ const DEFAULT_BYPASS = (path: string) =>
 export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
   const bypassPath = deps.bypassPath ?? DEFAULT_BYPASS;
   return createMiddleware<{
-    Variables: { tenant_id: string; user_id?: string };
+    Variables: { user_id: string };
   }>(async (c, next) => {
     if (bypassPath(c.req.path)) return next();
 
     if (deps.disabled) {
-      c.set("tenant_id", "default");
+      c.set("user_id", "usr_local");
       return next();
     }
 
@@ -66,8 +55,7 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
     if (apiKey) {
       const r = await deps.resolveApiKey(apiKey);
       if (!r) return c.json({ error: "Invalid API key" }, 401);
-      c.set("tenant_id", r.tenantId);
-      if (r.userId) c.set("user_id", r.userId);
+      c.set("user_id", r.userId);
       return next();
     }
 
@@ -80,26 +68,6 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
     }
     if (!session) return c.json({ error: "Unauthorized" }, 401);
 
-    // 3. Tenant resolution.
-    let tenantId: string | null = null;
-    const requested = c.req.header("x-active-tenant") || "";
-    if (requested) {
-      const ok = await deps.hasMembership(session.userId, requested);
-      if (!ok) {
-        return c.json(
-          {
-            type: "error",
-            error: { type: "not_a_member", message: "Not a member of the requested tenant" },
-          },
-          403,
-        );
-      }
-      tenantId = requested;
-    }
-    if (!tenantId) tenantId = await deps.defaultTenantForUser(session.userId);
-    if (!tenantId) tenantId = await deps.ensureTenantForUser(session);
-
-    c.set("tenant_id", tenantId);
     c.set("user_id", session.userId);
     return next();
   });

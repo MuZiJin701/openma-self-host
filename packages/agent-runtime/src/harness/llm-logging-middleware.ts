@@ -3,7 +3,7 @@
 // response to R2 for post-hoc debugging — "what did the model
 // actually see / produce on this turn?"
 //
-// Storage: t/{tenant_id}/sessions/{session_id}/llm/{event_id}.json
+// Storage: t/{user_id}/sessions/{session_id}/llm/{event_id}.json
 // where event_id is the `id` on the matching span.model_request_end
 // event (and span.model_request_start). Same id, computable from
 // session_id + event_id at read time.
@@ -21,7 +21,7 @@
 import type { LanguageModelMiddleware } from "ai";
 
 export interface LlmLoggingContext {
-  tenant_id: string;
+  user_id: string;
   session_id: string;
   /** R2 bucket (typically env.FILES_BUCKET). When null/undefined the
    *  middleware is a no-op pass-through — useful for tests + when the
@@ -36,7 +36,7 @@ export interface LlmLoggingContext {
 }
 
 /** Headers stripped from the persisted request — never put credentials
- *  in R2 even though the bucket is private and tenant-scoped. */
+ *  in R2 even though the bucket is private and user-scoped. */
 const REDACT_HEADERS = new Set([
   "authorization",
   "x-api-key",
@@ -98,7 +98,7 @@ export function llmLoggingMiddleware(
           };
           void r2
             .put(
-              `t/${ctx.tenant_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
+              `t/${ctx.user_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
               JSON.stringify(body),
               { httpMetadata: { contentType: "application/json" } },
             )
@@ -144,7 +144,7 @@ export function llmLoggingMiddleware(
             };
             try {
               await r2.put(
-                `t/${ctx.tenant_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
+                `t/${ctx.user_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
                 JSON.stringify(body),
                 { httpMetadata: { contentType: "application/json" } },
               );
@@ -181,7 +181,7 @@ export function llmLoggingMiddleware(
           };
           void r2
             .put(
-              `t/${ctx.tenant_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
+              `t/${ctx.user_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
               JSON.stringify(body),
               { httpMetadata: { contentType: "application/json" } },
             )
@@ -205,7 +205,7 @@ export function llmLoggingMiddleware(
       };
       try {
         await r2.put(
-          `t/${ctx.tenant_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
+          `t/${ctx.user_id}/sessions/${ctx.session_id}/llm/${eventId}.json`,
           JSON.stringify(body),
           { httpMetadata: { contentType: "application/json" } },
         );
@@ -222,6 +222,6 @@ export function llmLoggingMiddleware(
  * Build the R2 key the read endpoint uses to look up a logged call.
  * Single source of truth so the writer + reader can't drift.
  */
-export function llmLogKey(tenant_id: string, session_id: string, event_id: string): string {
-  return `t/${tenant_id}/sessions/${session_id}/llm/${event_id}.json`;
+export function llmLogKey(user_id: string, session_id: string, event_id: string): string {
+  return `t/${user_id}/sessions/${session_id}/llm/${event_id}.json`;
 }

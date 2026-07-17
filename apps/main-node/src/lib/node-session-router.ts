@@ -72,16 +72,16 @@ export class NodeSessionRouter implements SessionRouter {
       event.type === "user.custom_tool_result";
     if (isQueuedInput) {
       const row = await this.deps.sql
-        .prepare(`SELECT tenant_id, agent_id FROM sessions WHERE id = ?`)
+        .prepare(`SELECT user_id, agent_id FROM sessions WHERE id = ?`)
         .bind(sessionId)
-        .first<{ tenant_id: string; agent_id: string | null }>();
+        .first<{ user_id: string; agent_id: string | null }>();
       if (!row?.agent_id) {
         return { status: 404, body: JSON.stringify({ error: "session not found" }) };
       }
       try {
         const receipt = await this.deps.registry.enqueueEvent(
           sessionId,
-          row.tenant_id,
+          row.user_id,
           row.agent_id,
           event,
         );
@@ -297,13 +297,13 @@ export class NodeSessionRouter implements SessionRouter {
     // Reach into the registry for the active sandbox. Sandbox.exec
     // returns "exit=N\n<stdout>" — peel and report.
     const row = await this.deps.sql
-      .prepare(`SELECT tenant_id FROM sessions WHERE id = ?`)
+      .prepare(`SELECT user_id FROM sessions WHERE id = ?`)
       .bind(sessionId)
-      .first<{ tenant_id: string }>();
+      .first<{ user_id: string }>();
     if (!row) {
       return { exit_code: 1, output: "session not found", truncated: false };
     }
-    const entry = await this.deps.registry.getOrCreate(sessionId, row.tenant_id);
+    const entry = await this.deps.registry.getOrCreate(sessionId, row.user_id);
     const out = await entry.sandbox.exec(body.command, body.timeout_ms ?? 60_000);
     const m = /^exit=(-?\d+)\n([\s\S]*)$/.exec(out);
     if (!m) return { exit_code: 0, output: out, truncated: false };
@@ -346,11 +346,11 @@ export class NodeSessionRouter implements SessionRouter {
     path: string,
   ): Promise<ArrayBuffer | null> {
     const row = await this.deps.sql
-      .prepare(`SELECT tenant_id FROM sessions WHERE id = ?`)
+      .prepare(`SELECT user_id FROM sessions WHERE id = ?`)
       .bind(sessionId)
-      .first<{ tenant_id: string }>();
+      .first<{ user_id: string }>();
     if (!row) return null;
-    const entry = await this.deps.registry.getOrCreate(sessionId, row.tenant_id);
+    const entry = await this.deps.registry.getOrCreate(sessionId, row.user_id);
     if (!entry.sandbox.readFileBytes) return null;
     const bytes = await entry.sandbox.readFileBytes(path);
     return bytes.buffer.slice(
@@ -455,7 +455,7 @@ export class NodeSessionRouter implements SessionRouter {
   }
 
   async getLlmCallBody(
-    _tenantId: string,
+    _userId: string,
     _sessionId: string,
     _eventId: string,
   ): Promise<

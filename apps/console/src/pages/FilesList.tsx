@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { DownloadIcon, TrashIcon } from "lucide-react";
-import { useApi, getActiveTenantId } from "../lib/api";
+import { useApi } from "../lib/api";
 import { toast } from "sonner";
 import { DataTable, type ColumnDef } from "../components/DataTable";
 import { FacetedFilter } from "../components/FacetedFilter";
@@ -91,14 +91,12 @@ export function FilesList() {
   }, [scopeId, sessions]);
 
   // Direct fetch for binary download — api() always parses JSON, and we need
-  // the raw blob. Mirror its tenant-pin header so downloads honor the active
-  // workspace, not the user's default tenant.
+  // the raw blob. Mirror its user-pin header so downloads honor the active
+  // authenticated user's workspace.
   const download = async (f: FileRecord) => {
     try {
-      const activeTenant = getActiveTenantId();
       const res = await fetch(`/v1/files/${f.id}/content`, {
         credentials: "include",
-        headers: activeTenant ? { "x-active-tenant": activeTenant } : {},
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

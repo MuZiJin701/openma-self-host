@@ -4,8 +4,8 @@
 // Keep these tiny and runtime-agnostic: no Cloudflare types, no D1 query
 // language. Pass plain data + return plain data.
 //
-// Tenant routing: every method takes `tenantId` as the first argument. This
-// is intentional — it makes tenantId a routing key, so a future per-tenant-D1
+// User routing: every method takes `userId` as the first argument. This
+// is intentional — it makes userId a routing key, so a future per-user-D1
 // adapter can pick a database per call without any port changes.
 
 import type { EnvironmentConfig } from "@open-managed-agents/shared";
@@ -14,7 +14,7 @@ import type { EnvironmentRow, EnvironmentStatus } from "./types";
 
 export interface NewEnvironmentInput {
   id: string;
-  tenantId: string;
+  userId: string;
   name: string;
   description: string | null;
   status: EnvironmentStatus;
@@ -55,10 +55,10 @@ export interface EnvironmentUpdateFields {
 export interface EnvironmentRepo {
   insert(input: NewEnvironmentInput): Promise<EnvironmentRow>;
 
-  get(tenantId: string, environmentId: string): Promise<EnvironmentRow | null>;
+  get(userId: string, environmentId: string): Promise<EnvironmentRow | null>;
 
   list(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<EnvironmentRow[]>;
 
@@ -71,7 +71,7 @@ export interface EnvironmentRepo {
    * valid across all filter combinations.
    */
   listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       /** Row archive state. `'active'` → archived_at IS NULL,
        *  `'archived'` → archived_at IS NOT NULL, `'any'` → no filter.
@@ -92,22 +92,22 @@ export interface EnvironmentRepo {
     },
   ): Promise<{ items: EnvironmentRow[]; hasMore: boolean }>;
 
-  /** Cheap COUNT(*) for /v1/stats. Index `idx_environments_tenant` covers it. */
-  count(tenantId: string, opts: { includeArchived: boolean }): Promise<number>;
+  /** Cheap COUNT(*) for /v1/stats. Index `idx_environments_user` covers it. */
+  count(userId: string, opts: { includeArchived: boolean }): Promise<number>;
 
   update(
-    tenantId: string,
+    userId: string,
     environmentId: string,
     update: EnvironmentUpdateFields,
   ): Promise<EnvironmentRow>;
 
   archive(
-    tenantId: string,
+    userId: string,
     environmentId: string,
     archivedAt: number,
   ): Promise<EnvironmentRow>;
 
-  delete(tenantId: string, environmentId: string): Promise<void>;
+  delete(userId: string, environmentId: string): Promise<void>;
 }
 
 export interface Clock {

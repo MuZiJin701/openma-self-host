@@ -10,10 +10,8 @@ services:
         required: false
     environment:
       DATABASE_URL: postgres://oma:oma@postgres:5432/oma
+      DATA_DIR: /app/data
       SANDBOX_PROVIDER: subprocess
-      SANDBOX_WORKDIR: /app/data/sandboxes
-      FILES_BLOB_DIR: /app/data/files-blobs
-      SESSION_OUTPUTS_DIR: /app/data/session-outputs
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       PLATFORM_ROOT_SECRET: ${PLATFORM_ROOT_SECRET:-}
       AUTH_DISABLED: ${AUTH_DISABLED:-}

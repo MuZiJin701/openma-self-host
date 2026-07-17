@@ -15,9 +15,9 @@ afterEach(async () => {
 describe("self-host skill mounting", () => {
   it("makes the mounted skill version read-only in LocalSubprocess", async () => {
     const service = new InMemorySkillService();
-    const skill = await service.create({ tenantId: "tenant-a", name: "research" });
+    const skill = await service.create({ userId: "user-a", name: "research" });
     await service.createVersion({
-      tenantId: "tenant-a",
+      userId: "user-a",
       skillId: skill.id,
       files: [{ filename: "SKILL.md", content: "immutable skill" }],
     });
@@ -31,10 +31,10 @@ describe("self-host skill mounting", () => {
     await (registry as unknown as {
       mountAgentSkills(
         sandbox: LocalSubprocessSandbox,
-        tenantId: string,
+        userId: string,
         bindings: unknown,
       ): Promise<void>;
-    }).mountAgentSkills(sandbox, "tenant-a", [{ skill_id: skill.id, type: "skill" }]);
+    }).mountAgentSkills(sandbox, "user-a", [{ skill_id: skill.id, type: "skill" }]);
 
     await expect(sandbox.readFile(`/mnt/skills/${skill.id}/1/SKILL.md`)).resolves.toBe("immutable skill");
     await expect(

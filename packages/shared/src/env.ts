@@ -2,15 +2,15 @@ export interface Env {
   CONFIG_KV: KVNamespace;
   /** @deprecated Pre-shard binding. Equivalent to AUTH_DB_00 (the original
    *  openma-auth database) for back-compat during the shard rollout. New
-   *  code MUST use `getShardForTenant(env, tenantId)` from
+   *  code MUST use `getShardForUser(env, userId)` from
    *  @open-managed-agents/sql-client to route to the correct shard. */
   MAIN_DB: D1Database;
-  /** Tenant→shard routing table. Holds tenant_shard + shard_pool tables.
-   *  Every per-tenant query reads this first (cached in SHARD_CACHE_KV
+  /** User→shard routing table. Holds user_shard + shard_pool tables.
+   *  Every per-user query reads this first (cached in SHARD_CACHE_KV
    *  with 1hr TTL). See packages/sql-client/src/shard.ts. */
   ROUTER_DB?: D1Database;
-  /** Tenant data shard 0 — the original openma-auth, holds all
-   *  pre-shard tenants. */
+  /** User data shard 0 — the original openma-auth, holds all
+   *  pre-shard users. */
   AUTH_DB_00?: D1Database;
   AUTH_DB_01?: D1Database;
   AUTH_DB_02?: D1Database;
@@ -49,10 +49,10 @@ export interface Env {
   RL_API_USER_WRITE?: RateLimit;
   RL_API_USER_READ?: RateLimit;
   RL_SESSIONS_TENANT?: RateLimit;
-  /** Per-tenant cap on R2-writing endpoints (POST /v1/files,
+  /** Per-user cap on R2-writing endpoints (POST /v1/files,
    *  POST /v1/skills/:id/versions). Soft-passes when absent. */
   RL_UPLOAD_TENANT?: RateLimit;
-  /** Daily session-creation budget per tenant. KV-backed counter — see
+  /** Daily session-creation budget per user. KV-backed counter — see
    *  apps/main/src/quotas.ts. The number is the cap; absent or "0" =
    *  feature off (OSS-friendly). Counter key auto-expires next day. */
   SESSION_DAILY_CAP_PER_TENANT?: number;
@@ -90,8 +90,8 @@ export interface Env {
    *  dual-table refactor). When set to "1", apps/agent skips the
    *  per-step R2 PUT entirely AND drops `body_r2_key` from
    *  span.model_request_end events. Any other value (including unset)
-   *  enables capture. Tenant-scoped opt-out is a future
-   *  (TODO(llm-logging): add per-tenant flag in tenant config). */
+   *  enables capture. User-scoped opt-out is a future
+   *  (TODO(llm-logging): add per-user flag in user config). */
   LLM_LOGS_DISABLED?: string;
   TAVILY_API_KEY?: string;
   CLOUDFLARE_API_TOKEN?: string;
@@ -109,7 +109,7 @@ export interface Env {
   BILLING_INTERNAL_SECRET?: string;
   // WorkerEntrypoint RPC binding from the agent worker to the main worker's
   // McpProxyRpc class — see apps/main/src/index.ts. Cloud agents call
-  // `env.MAIN_MCP.mcpForward({tenantId, sessionId, serverName, ...})` so
+  // `env.MAIN_MCP.mcpForward({userId, sessionId, serverName, ...})` so
   // vault credential lookup + token injection happen in main where the
   // secrets already live, never in the agent's DO. Optional because main
   // worker doesn't have this binding (it's the target, not a caller).
@@ -120,7 +120,7 @@ export interface Env {
   // match. Same "credentials only ever live in main" property.
   MAIN_MCP?: {
     mcpForward(opts: {
-      tenantId: string;
+      userId: string;
       sessionId: string;
       serverName: string;
       method: string;
@@ -128,7 +128,7 @@ export interface Env {
       body: string | null;
     }): Promise<{ status: number; headers: Record<string, string>; body: string }>;
     outboundForward(opts: {
-      tenantId: string;
+      userId: string;
       sessionId: string;
       url: string;
       method: string;
@@ -143,7 +143,7 @@ export interface Env {
      * streaming, SigV4 signed headers, etc).
      */
     lookupOutboundCredential(opts: {
-      tenantId: string;
+      userId: string;
       sessionId: string;
       hostname: string;
     }): Promise<{ type: "bearer"; token: string } | null>;
@@ -155,7 +155,7 @@ export interface Env {
      * apps/main for the picking rule.
      */
     lookupGithubCredential(opts: {
-      tenantId: string;
+      userId: string;
       sessionId: string;
       hostname: string;
       pathname: string;
@@ -164,7 +164,7 @@ export interface Env {
      * Transparent HTTP proxy for the cloud agent's MCP traffic. Agent
      * worker hands AI SDK's MCP HTTP transport a custom fetch that calls
      * `env.MAIN_MCP.fetch(req)` with three metadata headers
-     * (`x-oma-tenant`, `x-oma-session`, `x-oma-mcp-server`); main worker
+     * (`x-oma-user`, `x-oma-session`, `x-oma-mcp-server`); main worker
      * resolves the vault credential, replaces the Authorization header,
      * strips the metadata, and forwards to the upstream. Body / headers
      * / status / Mcp-Session-Id stream through both ways unchanged, so
@@ -176,11 +176,11 @@ export interface Env {
   };
   // Used by integrations subsystem to sign tokens at rest. Gateway's value.
   PLATFORM_ROOT_SECRET?: string;
-  // Killswitch for per-tenant D1 routing. Unset / "true" / anything else =
-  // routing enabled (the default — uses tenant_shard meta table). Set to
+  // Killswitch for per-user D1 routing. Unset / "true" / anything else =
+  // routing enabled (the default — uses user_shard meta table). Set to
   // "false" or "0" to roll back to the shared-MAIN_DB provider without
   // redeploying code. Implemented in
-  // packages/services/src/index.ts buildCfTenantDbProvider.
+  // packages/services/src/index.ts buildCfUserDbProvider.
   PER_TENANT_DB_ENABLED?: string;
   // Per-store backend selection. JSON object mapping store key (e.g.
   // "agents", "sessions") to backend name ("cf" | "pg" | "memory"). Missing

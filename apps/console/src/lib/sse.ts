@@ -7,7 +7,7 @@
  *
  * Features kept from the old call site (lib/api.ts streamEvents):
  *   - `credentials: 'include'` for cookie auth.
- *   - Custom headers (e.g. `x-active-tenant`).
+ *   - Custom headers (e.g. `x-active-user`).
  *   - `signal` for caller-initiated abort.
  *   - `openWhenHidden`-equivalent: we don't tear down on visibilitychange;
  *     the connection only ends when caller aborts or `onError` returns null.

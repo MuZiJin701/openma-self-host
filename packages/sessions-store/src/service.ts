@@ -54,12 +54,12 @@ export type NewResourceInput = Omit<SessionResource, "id" | "session_id" | "crea
  *     we apply the same block to resource adds for consistency)
  *   - cascade delete on session.delete (sessions, resources)
  *   - cascade delete on agent.delete (sessions.ts O(N) scan replacement)
- *   - sidx-style cross-tenant lookup via getById
+ *   - sidx-style cross-user lookup via getById
  *   - metadata merge semantics (per-key delete on null) — was sessions.ts:489-498
  *
  * Does NOT own:
  *   - secret materials (env.value).
- *     Those continue to live in CONFIG_KV under `t:{tenant}:secret:...` keys
+ *     Those continue to live in CONFIG_KV under `t:{user}:secret:...` keys
  *     because they're write-only blobs the route layer reads alongside the
  *     resource. Sessions store records resource METADATA only.
  *   - file copy / R2 ops at session create — caller (route) handles those
@@ -93,7 +93,7 @@ export class SessionService {
    * before the batch fires.
    */
   async create(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
     environmentId: string;
     title?: string;
@@ -136,7 +136,7 @@ export class SessionService {
     return await this.repo.insertWithResources(
       {
         id: sessionId,
-        tenantId: opts.tenantId,
+        userId: opts.userId,
         agentId: opts.agentId,
         environmentId: opts.environmentId,
         title: opts.title ?? "",
@@ -157,7 +157,7 @@ export class SessionService {
    * (sessions.ts:477-504).
    */
   async update(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     title?: string;
     /** Per-key merge — pass `{ key: null }` to drop a key. Pass undefined to skip. */
@@ -175,25 +175,25 @@ export class SessionService {
     if (opts.metadata !== undefined) {
       update.metadata = mergeMetadata(existing.metadata, opts.metadata);
     }
-    return this.repo.update(opts.tenantId, opts.sessionId, update);
+    return this.repo.update(opts.userId, opts.sessionId, update);
   }
 
   /** Just status — convenience for the SessionDO write-back path. */
   async updateStatus(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     status: SessionStatus;
   }): Promise<SessionRow> {
     await this.requireSession(opts);
-    return this.repo.update(opts.tenantId, opts.sessionId, {
+    return this.repo.update(opts.userId, opts.sessionId, {
       status: opts.status,
       updatedAt: this.clock.nowMs(),
     });
   }
 
-  async archive(opts: { tenantId: string; sessionId: string }): Promise<SessionRow> {
+  async archive(opts: { userId: string; sessionId: string }): Promise<SessionRow> {
     await this.requireSession(opts);
-    return this.repo.archive(opts.tenantId, opts.sessionId, this.clock.nowMs());
+    return this.repo.archive(opts.userId, opts.sessionId, this.clock.nowMs());
   }
 
   /**
@@ -202,9 +202,9 @@ export class SessionService {
    * cleanup. Service stays out of those because they live in different
    * subsystems (KV, sandbox binding) and would tangle ports.
    */
-  async delete(opts: { tenantId: string; sessionId: string }): Promise<void> {
+  async delete(opts: { userId: string; sessionId: string }): Promise<void> {
     await this.requireSession(opts);
-    await this.repo.deleteWithResources(opts.tenantId, opts.sessionId);
+    await this.repo.deleteWithResources(opts.userId, opts.sessionId);
   }
 
   /**
@@ -215,8 +215,8 @@ export class SessionService {
    *
    * Returns deletion count for logging.
    */
-  async deleteByAgent(opts: { tenantId: string; agentId: string }): Promise<number> {
-    return this.repo.deleteByAgent(opts.tenantId, opts.agentId);
+  async deleteByAgent(opts: { userId: string; agentId: string }): Promise<number> {
+    return this.repo.deleteByAgent(opts.userId, opts.agentId);
   }
 
   // ============================================================
@@ -224,21 +224,21 @@ export class SessionService {
   // ============================================================
 
   async get(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
   }): Promise<SessionRow | null> {
-    return this.repo.get(opts.tenantId, opts.sessionId);
+    return this.repo.get(opts.userId, opts.sessionId);
   }
 
-  /** Cross-tenant lookup by session id — replaces the `sidx:` reverse-index
-   *  pattern in internal.ts:381-409. Returns the row including its tenant_id
+  /** Cross-user lookup by session id — replaces the `sidx:` reverse-index
+   *  pattern in internal.ts:381-409. Returns the row including its user_id
    *  so internal endpoints can authorize downstream calls. */
   async getById(opts: { sessionId: string }): Promise<SessionRow | null> {
     return this.repo.getById(opts.sessionId);
   }
 
   async list(opts: {
-    tenantId: string;
+    userId: string;
     agentId?: string;
     includeArchived?: boolean;
     order?: "asc" | "desc";
@@ -250,7 +250,7 @@ export class SessionService {
       order: opts.order ?? "desc",
       limit: opts.limit ?? 100,
     };
-    return this.repo.list(opts.tenantId, listOpts);
+    return this.repo.list(opts.userId, listOpts);
   }
 
   /** Cursor-paginated list. Order: created_at DESC, id DESC tie-break.
@@ -258,7 +258,7 @@ export class SessionService {
    *  the session lifecycle column; `q` is a case-insensitive substring filter
    *  on title. */
   async listPage(opts: {
-    tenantId: string;
+    userId: string;
     agentId?: string;
     includeArchived?: boolean;
     limit?: number;
@@ -270,7 +270,7 @@ export class SessionService {
       cursor: opts.cursor,
       limit: opts.limit,
       fetch: (after, limit) =>
-        this.repo.listPage(opts.tenantId, {
+        this.repo.listPage(opts.userId, {
           agentId: opts.agentId,
           includeArchived: opts.includeArchived ?? false,
           limit,
@@ -285,29 +285,29 @@ export class SessionService {
     });
   }
 
-  /** Agent-delete safety check: refuse if any active session in the tenant
+  /** Agent-delete safety check: refuse if any active session in the user
    *  references this agent. Replaces the agents.ts:340-348 KV list+filter. */
   async hasActiveByAgent(opts: {
-    tenantId: string;
+    userId: string;
     agentId: string;
   }): Promise<boolean> {
-    return this.repo.hasActiveByAgent(opts.tenantId, opts.agentId);
+    return this.repo.hasActiveByAgent(opts.userId, opts.agentId);
   }
 
   /** Environment-delete safety check — same shape as hasActiveByAgent. */
   async hasActiveByEnvironment(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
   }): Promise<boolean> {
-    return this.repo.hasActiveByEnvironment(opts.tenantId, opts.environmentId);
+    return this.repo.hasActiveByEnvironment(opts.userId, opts.environmentId);
   }
 
   /** Cheap COUNT for /v1/stats. Default counts only non-archived rows. */
   async count(opts: {
-    tenantId: string;
+    userId: string;
     includeArchived?: boolean;
   }): Promise<number> {
-    return this.repo.count(opts.tenantId, {
+    return this.repo.count(opts.userId, {
       includeArchived: opts.includeArchived ?? false,
     });
   }
@@ -322,7 +322,7 @@ export class SessionService {
    * (consistency with the events route's archived-session block).
    */
   async addResource(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     resource: NewResourceInput;
   }): Promise<SessionResourceRow> {
@@ -355,7 +355,7 @@ export class SessionService {
   }
 
   async listResources(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
   }): Promise<SessionResourceRow[]> {
     await this.requireSession(opts);
@@ -363,8 +363,8 @@ export class SessionService {
   }
 
   /**
-   * Untenanted resource list — used by SessionDO at warmup, where the DO
-   * already trusts its own state's tenant_id. Lets the DO skip the
+   * Unusered resource list — used by SessionDO at warmup, where the DO
+   * already trusts its own state's user_id. Lets the DO skip the
    * session-existence round-trip when it just needs the resource snapshot.
    */
   async listResourcesBySession(opts: {
@@ -374,7 +374,7 @@ export class SessionService {
   }
 
   async getResource(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     resourceId: string;
   }): Promise<SessionResourceRow | null> {
@@ -383,7 +383,7 @@ export class SessionService {
   }
 
   async deleteResource(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     resourceId: string;
   }): Promise<void> {
@@ -400,7 +400,7 @@ export class SessionService {
    *  remount (e.g. mount_path / access changes) is the caller's job —
    *  this method only persists. */
   async updateResource(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
     resourceId: string;
     resource: SessionResource;
@@ -431,10 +431,10 @@ export class SessionService {
   // ============================================================
 
   private async requireSession(opts: {
-    tenantId: string;
+    userId: string;
     sessionId: string;
   }): Promise<SessionRow> {
-    const row = await this.repo.get(opts.tenantId, opts.sessionId);
+    const row = await this.repo.get(opts.userId, opts.sessionId);
     if (!row) throw new SessionNotFoundError();
     return row;
   }

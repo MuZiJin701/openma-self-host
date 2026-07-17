@@ -374,7 +374,7 @@ export function ModelCardsList() {
           <div>
             <label htmlFor="modelcard-id" className="text-sm text-fg-muted block mb-1">
               Model ID *
-              <span className="ml-1 text-xs text-fg-subtle">(tenant-unique handle agents reference)</span>
+              <span className="ml-1 text-xs text-fg-subtle">(user-unique handle agents reference)</span>
             </label>
             <TextInput id="modelcard-id" value={form.model_id} onChange={(e) => setForm({ ...form, model_id: e.target.value })} className={inputCls}
               placeholder="claude-prod, claude-sonnet-4-6, bedrock-sonnet, ..." />

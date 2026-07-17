@@ -8,8 +8,8 @@ export class ModelCardNotFoundError extends Error {
 }
 
 /**
- * Adapter-level UNIQUE(tenant_id, model_id) violation surfaced as a domain error.
- * Replaces the per-tenant kvListAll + JSON.parse loop in the legacy
+ * Adapter-level UNIQUE(user_id, model_id) violation surfaced as a domain error.
+ * Replaces the per-user kvListAll + JSON.parse loop in the legacy
  * model-cards.ts:33-43.
  */
 export class ModelCardDuplicateModelIdError extends Error {
@@ -20,7 +20,7 @@ export class ModelCardDuplicateModelIdError extends Error {
 }
 
 /**
- * Partial UNIQUE(tenant_id) WHERE is_default = 1 violation. Surfaced when a
+ * Partial UNIQUE(user_id) WHERE is_default = 1 violation. Surfaced when a
  * caller tries to insert/update a row to is_default=1 without atomically
  * clearing the previous default first. Indicates a service-layer bug — the
  * service's create-with-default and setDefault operations are wrapped in
@@ -28,7 +28,7 @@ export class ModelCardDuplicateModelIdError extends Error {
  */
 export class ModelCardDefaultConflictError extends Error {
   readonly code = "model_card_default_conflict";
-  constructor(message = "Another model card is already the default for this tenant") {
+  constructor(message = "Another model card is already the default for this user") {
     super(message);
   }
 }

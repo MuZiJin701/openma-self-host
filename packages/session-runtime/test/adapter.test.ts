@@ -48,7 +48,7 @@ async function newFixture(): Promise<Fixture> {
   await sql.exec(`
     CREATE TABLE sessions (
       id              TEXT PRIMARY KEY NOT NULL,
-      tenant_id       TEXT NOT NULL,
+      user_id       TEXT NOT NULL,
       agent_id        TEXT,
       status          TEXT NOT NULL,
       title           TEXT,
@@ -64,7 +64,7 @@ async function newFixture(): Promise<Fixture> {
   const now = Date.now();
   await sql
     .prepare(
-      `INSERT INTO sessions (id, tenant_id, agent_id, status, created_at, updated_at)
+      `INSERT INTO sessions (id, user_id, agent_id, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .bind("sess_test", "tn_test", "agent_test", "idle", now, now)
@@ -213,7 +213,7 @@ describe("RuntimeAdapter — unified shape (Node + CF)", () => {
     const now = Date.now();
     await f.sql
       .prepare(
-        `INSERT INTO sessions (id, tenant_id, agent_id, status, created_at, updated_at)
+        `INSERT INTO sessions (id, user_id, agent_id, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .bind("sess_other", "tn_test", "agent_test", "idle", now, now)

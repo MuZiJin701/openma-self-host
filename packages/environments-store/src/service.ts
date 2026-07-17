@@ -25,7 +25,7 @@ export interface EnvironmentServiceDeps {
  * EnvironmentService — pure business logic over abstract ports.
  *
  * Owns the environment entity (id, name, status, config, sandbox_worker_name,
- * timestamps). Replaces the KV layout `t:{tenant}:env:{id}` previously used by
+ * timestamps). Replaces the KV layout `t:{user}:env:{id}` previously used by
  * routes/environments.ts.
  *
  * Does NOT own:
@@ -58,7 +58,7 @@ export class EnvironmentService {
   // ============================================================
 
   async create(opts: {
-    tenantId: string;
+    userId: string;
     /** Optional stable ID for deployments that expose a fixed environment. */
     id?: string;
     name: string;
@@ -73,7 +73,7 @@ export class EnvironmentService {
   }): Promise<EnvironmentRow> {
     const input: NewEnvironmentInput = {
       id: opts.id ?? this.ids.environmentId(),
-      tenantId: opts.tenantId,
+      userId: opts.userId,
       name: opts.name,
       description: opts.description ?? null,
       status: opts.status ?? "ready",
@@ -96,7 +96,7 @@ export class EnvironmentService {
    * `updated_at` is bumped automatically on every call; callers don't pass it.
    */
   async update(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
     name?: string;
     description?: string | null;
@@ -121,27 +121,27 @@ export class EnvironmentService {
     if (opts.metadata !== undefined) update.metadata = opts.metadata;
     if (opts.imageStrategy !== undefined) update.imageStrategy = opts.imageStrategy;
     if (opts.imageHandle !== undefined) update.imageHandle = opts.imageHandle;
-    return this.repo.update(opts.tenantId, opts.environmentId, update);
+    return this.repo.update(opts.userId, opts.environmentId, update);
   }
 
   async archive(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
   }): Promise<EnvironmentRow> {
     await this.requireEnvironment(opts);
     return this.repo.archive(
-      opts.tenantId,
+      opts.userId,
       opts.environmentId,
       this.clock.nowMs(),
     );
   }
 
   async delete(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
   }): Promise<void> {
     await this.requireEnvironment(opts);
-    await this.repo.delete(opts.tenantId, opts.environmentId);
+    await this.repo.delete(opts.userId, opts.environmentId);
   }
 
   // ============================================================
@@ -149,23 +149,23 @@ export class EnvironmentService {
   // ============================================================
 
   async get(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
   }): Promise<EnvironmentRow | null> {
-    return this.repo.get(opts.tenantId, opts.environmentId);
+    return this.repo.get(opts.userId, opts.environmentId);
   }
 
   /**
    * List environments. Defaults to `includeArchived: true` to preserve the
    * historical KV behavior — the previous routes/environments.ts list path
-   * scanned `t:{tenant}:env:` and returned every row regardless of
+   * scanned `t:{user}:env:` and returned every row regardless of
    * `archived_at`. Pass `false` from a route that wants to hide archived.
    */
   async list(opts: {
-    tenantId: string;
+    userId: string;
     includeArchived?: boolean;
   }): Promise<EnvironmentRow[]> {
-    return this.repo.list(opts.tenantId, {
+    return this.repo.list(opts.userId, {
       includeArchived: opts.includeArchived ?? true,
     });
   }
@@ -176,7 +176,7 @@ export class EnvironmentService {
    * created_at DESC (newest first), id DESC tie-break.
    */
   async listPage(opts: {
-    tenantId: string;
+    userId: string;
     /** Row archive state. Pass `'active'` to exclude archived,
      *  `'archived'` for only-archived, `'any'` for both. Replaces the
      *  legacy `includeArchived` boolean for any 3-way intent. */
@@ -200,7 +200,7 @@ export class EnvironmentService {
       cursor: opts.cursor,
       limit: opts.limit,
       fetch: (after, limit) =>
-        this.repo.listPage(opts.tenantId, {
+        this.repo.listPage(opts.userId, {
           status,
           includeArchived: opts.includeArchived ?? true,
           limit,
@@ -218,10 +218,10 @@ export class EnvironmentService {
 
   /** Cheap COUNT for /v1/stats. Default counts only non-archived rows. */
   async count(opts: {
-    tenantId: string;
+    userId: string;
     includeArchived?: boolean;
   }): Promise<number> {
-    return this.repo.count(opts.tenantId, {
+    return this.repo.count(opts.userId, {
       includeArchived: opts.includeArchived ?? false,
     });
   }
@@ -231,10 +231,10 @@ export class EnvironmentService {
   // ============================================================
 
   private async requireEnvironment(opts: {
-    tenantId: string;
+    userId: string;
     environmentId: string;
   }): Promise<EnvironmentRow> {
-    const row = await this.repo.get(opts.tenantId, opts.environmentId);
+    const row = await this.repo.get(opts.userId, opts.environmentId);
     if (!row) throw new EnvironmentNotFoundError();
     return row;
   }
@@ -246,7 +246,7 @@ export class EnvironmentService {
 
 /**
  * Convert an internal {@link EnvironmentRow} to the API-shape
- * {@link EnvironmentConfig} from packages/shared. Drops `tenant_id`, drops
+ * {@link EnvironmentConfig} from packages/shared. Drops `user_id`, drops
  * dedicated `null` columns the historical KV shape didn't expose (the legacy
  * EnvironmentConfig allowed `description?` / `sandbox_worker_name?` /
  * `build_error?` / `metadata?` / `updated_at?` / `archived_at?` — all encoded

@@ -10,7 +10,7 @@ export type QueueReceipt = {
 
 export interface SessionTurnInput {
   sessionId: string;
-  tenantId: string;
+  userId: string;
   agentId: string;
   event: SessionEvent;
   pendingSeq: number;
@@ -59,7 +59,7 @@ export interface SessionTurnRunner {
 export interface SessionTurnExecutor {
   enqueue(
     sessionId: string,
-    tenantId: string,
+    userId: string,
     agentId: string,
     event: SessionEvent,
   ): Promise<QueueReceipt>;

@@ -12,8 +12,8 @@ import type { FileRow, FileScope } from "./types";
 
 export interface NewFileInput {
   id: string;
-  tenantId: string;
-  /** NULL when scope === "tenant". */
+  userId: string;
+  /** NULL when scope === "user". */
   sessionId: string | null;
   scope: FileScope;
   filename: string;
@@ -28,7 +28,7 @@ export interface FileListOptions {
   /**
    * Optional session filter — when set, returns ONLY files where
    * session_id = sessionId (the previous filebyscope: KV index path).
-   * When undefined, returns ALL files for the tenant (both scopes).
+   * When undefined, returns ALL files for the user (both scopes).
    */
   sessionId?: string;
   /** Cursor: return files with id < beforeId (lexicographic). */
@@ -44,16 +44,16 @@ export interface FileListOptions {
 export interface FileRepo {
   insert(input: NewFileInput): Promise<FileRow>;
 
-  get(tenantId: string, fileId: string): Promise<FileRow | null>;
+  get(userId: string, fileId: string): Promise<FileRow | null>;
 
-  list(tenantId: string, opts: FileListOptions): Promise<FileRow[]>;
+  list(userId: string, opts: FileListOptions): Promise<FileRow[]>;
 
   /**
    * Hard-delete a file row. Returns the deleted row (so the caller can pull
    * the r2_key out and DELETE the R2 object). Returns null if the row did
-   * not exist or did not belong to the tenant.
+   * not exist or did not belong to the user.
    */
-  delete(tenantId: string, fileId: string): Promise<FileRow | null>;
+  delete(userId: string, fileId: string): Promise<FileRow | null>;
 
   /**
    * Cascade hard-delete every file scoped to a session. Returns the deleted

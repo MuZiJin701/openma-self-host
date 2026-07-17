@@ -22,7 +22,7 @@ export interface FileServiceDeps {
  * FileService — pure business logic over abstract ports.
  *
  * Owns:
- *   - scope derivation (sessionId present → "session" scope, else "tenant")
+ *   - scope derivation (sessionId present → "session" scope, else "user")
  *   - list-path index selection (with vs without session filter)
  *   - delete returns r2_key so the route can DELETE the R2 object
  *   - cascade by session — single indexed query replaces the audit-flagged
@@ -35,9 +35,9 @@ export interface FileServiceDeps {
  *     (R2 PUT before metadata write) identical to the KV era.
  *   - R2 PUT / GET / DELETE. The route owns R2 lifecycle. Service exposes
  *     r2_key on read + on delete so the route knows which object to act on.
- *   - Tenant-validation of session_id. The route already verifies the session
- *     belongs to the tenant (or doesn't, depending on the source). This store
- *     trusts the caller's tenantId argument.
+ *   - User-validation of session_id. The route already verifies the session
+ *     belongs to the user (or doesn't, depending on the source). This store
+ *     trusts the caller's userId argument.
  */
 export class FileService {
   private readonly repo: FileRepo;
@@ -60,12 +60,12 @@ export class FileService {
    * object (or accepting the orphan, same as the KV-era behavior).
    *
    * `sessionId` controls scope:
-   *   - undefined / null → scope = "tenant", session_id = NULL
+   *   - undefined / null → scope = "user", session_id = NULL
    *   - string           → scope = "session", session_id = string
    */
   async create(opts: {
     id: string;
-    tenantId: string;
+    userId: string;
     sessionId?: string | null;
     filename: string;
     mediaType: string;
@@ -76,9 +76,9 @@ export class FileService {
     const sessionId = opts.sessionId ?? null;
     const input: NewFileInput = {
       id: opts.id,
-      tenantId: opts.tenantId,
+      userId: opts.userId,
       sessionId,
-      scope: sessionId === null ? "tenant" : "session",
+      scope: sessionId === null ? "user" : "session",
       filename: opts.filename,
       mediaType: opts.mediaType,
       sizeBytes: opts.sizeBytes,
@@ -98,10 +98,10 @@ export class FileService {
    * the file doesn't exist (matches the route's 404 response).
    */
   async delete(opts: {
-    tenantId: string;
+    userId: string;
     fileId: string;
   }): Promise<FileRow> {
-    const deleted = await this.repo.delete(opts.tenantId, opts.fileId);
+    const deleted = await this.repo.delete(opts.userId, opts.fileId);
     if (!deleted) throw new FileNotFoundError();
     return deleted;
   }
@@ -124,22 +124,22 @@ export class FileService {
   // ============================================================
 
   async get(opts: {
-    tenantId: string;
+    userId: string;
     fileId: string;
   }): Promise<FileRow | null> {
-    return this.repo.get(opts.tenantId, opts.fileId);
+    return this.repo.get(opts.userId, opts.fileId);
   }
 
   /**
-   * List files for a tenant, with optional session filter + cursor pagination.
+   * List files for a user, with optional session filter + cursor pagination.
    * Defaults: limit=100, max=1000, order=desc — matches files.ts:101-103.
    *
-   * The session filter uses the (tenant_id, session_id, created_at DESC)
-   * composite index. Without it, uses (tenant_id, created_at DESC). Both
+   * The session filter uses the (user_id, session_id, created_at DESC)
+   * composite index. Without it, uses (user_id, created_at DESC). Both
    * paths are a single indexed SELECT — the KV-era list+merge is gone.
    */
   async list(opts: {
-    tenantId: string;
+    userId: string;
     sessionId?: string;
     beforeId?: string;
     afterId?: string;
@@ -156,7 +156,7 @@ export class FileService {
       order: opts.order ?? "desc",
       limit,
     };
-    return this.repo.list(opts.tenantId, listOpts);
+    return this.repo.list(opts.userId, listOpts);
   }
 }
 

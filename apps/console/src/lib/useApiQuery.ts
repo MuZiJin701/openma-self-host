@@ -12,7 +12,7 @@ import { useApi } from "./api";
 
 /**
  * Thin TanStack Query wrappers around `useApi`. Existing semantics (auth
- * headers, error toasting, tenant pinning) come from `useApi` itself —
+ * headers, error toasting, user pinning) come from `useApi` itself —
  * these hooks just wire its `api` / fetch promise into TQ's lifecycle.
  *
  * Why these exist:
@@ -94,7 +94,7 @@ export function useApiQuery<T>(
     staleTime: opts.staleTime,
     refetchInterval: opts.refetchInterval,
     // Stale-while-revalidate: when params change (filter chip, search,
-    // tenant switch), keep the previous result rendered while the new
+    // user switch), keep the previous result rendered while the new
     // fetch runs in the background. Pages that read `isLoading` only see
     // it true on a truly cold cache; subsequent param tweaks feel
     // instant (no skeleton flash, no layout jump). `isFetching` is still

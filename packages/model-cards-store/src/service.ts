@@ -34,7 +34,7 @@ export interface ModelCardServiceDeps {
  * Does NOT own:
  *   - Validation that the model_id is a known provider model — that's the
  *     route layer's job (or a future ModelCatalog port).
- *   - Tenant authorization — caller must have already established `tenantId`
+ *   - User authorization — caller must have already established `userId`
  *     via the auth middleware before calling.
  *   - Cascade on delete — there is no cascade today; agents reference cards
  *     by id and the agent route validates the reference at write time
@@ -42,8 +42,8 @@ export interface ModelCardServiceDeps {
  *     service, add a guard here.
  *
  * Default + UNIQUE invariants:
- *   - The DB enforces UNIQUE(tenant_id, model_id) and PARTIAL UNIQUE
- *     (tenant_id) WHERE is_default = 1. The service uses repo methods that
+ *   - The DB enforces UNIQUE(user_id, model_id) and PARTIAL UNIQUE
+ *     (user_id) WHERE is_default = 1. The service uses repo methods that
  *     implement clear-then-set atomically, so partial-UNIQUE violations
  *     should never surface under normal use. They DO surface if a caller
  *     bypasses the service.
@@ -68,8 +68,8 @@ export class ModelCardService {
   // ============================================================
 
   async create(opts: {
-    tenantId: string;
-    /** Tenant-unique handle. UNIQUE(tenant_id, model_id) enforced in DB. */
+    userId: string;
+    /** User-unique handle. UNIQUE(user_id, model_id) enforced in DB. */
     modelId: string;
     provider: string;
     /** Wire-level LLM model string sent to provider. Defaults to modelId
@@ -85,7 +85,7 @@ export class ModelCardService {
     const apiKeyCipher = await this.crypto.encrypt(opts.apiKey);
     return await this.repo.insert({
       id: this.ids.modelCardId(),
-      tenantId: opts.tenantId,
+      userId: opts.userId,
       modelId: opts.modelId,
       provider: opts.provider,
       model: opts.model ?? opts.modelId,
@@ -99,10 +99,10 @@ export class ModelCardService {
   }
 
   async update(opts: {
-    tenantId: string;
+    userId: string;
     cardId: string;
     provider?: string;
-    /** Rename the handle. UNIQUE(tenant_id, model_id) still enforced. */
+    /** Rename the handle. UNIQUE(user_id, model_id) still enforced. */
     modelId?: string;
     /** Change the wire-level LLM string sent to the provider. */
     model?: string;
@@ -130,30 +130,30 @@ export class ModelCardService {
     // Explicit `await` so an immediately-rejecting update is caught here and
     // becomes this function's rejection — without it, V8 transiently marks
     // the inner Promise as unhandled before the outer await catches it.
-    return await this.repo.update(opts.tenantId, opts.cardId, update);
+    return await this.repo.update(opts.userId, opts.cardId, update);
   }
 
   /**
-   * Atomically mark this card as the tenant default, clearing any other
+   * Atomically mark this card as the user default, clearing any other
    * is_default=1 row in the same batch. Replaces the kvListAll +
    * per-card UPDATE loop in the legacy clearDefaults() + makeDefault flow.
    */
   async setDefault(opts: {
-    tenantId: string;
+    userId: string;
     cardId: string;
   }): Promise<ModelCardRow> {
     await this.requireCard(opts);
-    return await this.repo.setDefault(opts.tenantId, opts.cardId, this.clock.nowMs());
+    return await this.repo.setDefault(opts.userId, opts.cardId, this.clock.nowMs());
   }
 
-  async delete(opts: { tenantId: string; cardId: string }): Promise<void> {
+  async delete(opts: { userId: string; cardId: string }): Promise<void> {
     await this.requireCard(opts);
-    await this.repo.delete(opts.tenantId, opts.cardId);
+    await this.repo.delete(opts.userId, opts.cardId);
   }
 
-  async archive(opts: { tenantId: string; cardId: string }): Promise<ModelCardRow> {
+  async archive(opts: { userId: string; cardId: string }): Promise<ModelCardRow> {
     await this.requireCard(opts);
-    return await this.repo.archive(opts.tenantId, opts.cardId, this.clock.nowMs());
+    return await this.repo.archive(opts.userId, opts.cardId, this.clock.nowMs());
   }
 
   // ============================================================
@@ -161,19 +161,19 @@ export class ModelCardService {
   // ============================================================
 
   async get(opts: {
-    tenantId: string;
+    userId: string;
     cardId: string;
   }): Promise<ModelCardRow | null> {
-    return this.repo.get(opts.tenantId, opts.cardId);
+    return this.repo.get(opts.userId, opts.cardId);
   }
 
-  async list(opts: { tenantId: string }): Promise<ModelCardRow[]> {
-    return this.repo.list(opts.tenantId);
+  async list(opts: { userId: string }): Promise<ModelCardRow[]> {
+    return this.repo.list(opts.userId);
   }
 
   /** Cursor-paginated list. Order: created_at DESC, id DESC tie-break. */
   async listPage(opts: {
-    tenantId: string;
+    userId: string;
     limit?: number;
     cursor?: string;
     q?: string;
@@ -189,7 +189,7 @@ export class ModelCardService {
       cursor: opts.cursor,
       limit: opts.limit,
       fetch: (after, limit) =>
-        this.repo.listPage(opts.tenantId, {
+        this.repo.listPage(opts.userId, {
           limit,
           after,
           q: opts.q,
@@ -206,18 +206,18 @@ export class ModelCardService {
 
   /**
    * Used by the agent worker to resolve `agent.model` to a card. Returns the
-   * card whose `model_id` exactly matches. Replaces the per-tenant
+   * card whose `model_id` exactly matches. Replaces the per-user
    * CONFIG_KV.list + JSON.parse loop in session-do.ts:1141-1163.
    */
   async findByModelId(opts: {
-    tenantId: string;
+    userId: string;
     modelId: string;
   }): Promise<ModelCardRow | null> {
-    return this.repo.findByModelId(opts.tenantId, opts.modelId);
+    return this.repo.findByModelId(opts.userId, opts.modelId);
   }
 
-  async getDefault(opts: { tenantId: string }): Promise<ModelCardRow | null> {
-    return this.repo.getDefault(opts.tenantId);
+  async getDefault(opts: { userId: string }): Promise<ModelCardRow | null> {
+    return this.repo.getDefault(opts.userId);
   }
 
   /**
@@ -230,16 +230,16 @@ export class ModelCardService {
    * vars" exactly like the legacy KV path did.
    */
   async getApiKey(opts: {
-    tenantId: string;
+    userId: string;
     cardId: string;
   }): Promise<string | null> {
-    const cipher = await this.repo.getApiKeyCipher(opts.tenantId, opts.cardId);
+    const cipher = await this.repo.getApiKeyCipher(opts.userId, opts.cardId);
     if (cipher === null) return null;
     try {
       return await this.crypto.decrypt(cipher);
     } catch (err) {
       this.logger.warn("model-cards-store: api_key decrypt failed", {
-        tenantId: opts.tenantId,
+        userId: opts.userId,
         cardId: opts.cardId,
         err: err instanceof Error ? err.message : String(err),
       });
@@ -252,10 +252,10 @@ export class ModelCardService {
   // ============================================================
 
   private async requireCard(opts: {
-    tenantId: string;
+    userId: string;
     cardId: string;
   }): Promise<ModelCardRow> {
-    const row = await this.repo.get(opts.tenantId, opts.cardId);
+    const row = await this.repo.get(opts.userId, opts.cardId);
     if (!row) throw new ModelCardNotFoundError();
     return row;
   }
@@ -273,7 +273,7 @@ const consoleLogger: Logger = { warn: (msg, ctx) => console.warn(msg, ctx) };
 
 /**
  * No-op encryption — matches the legacy KV layout where api_keys were stored
- * cleartext under `t:{tenant}:modelcard:{id}:key`. Use this when no
+ * cleartext under `t:{user}:modelcard:{id}:key`. Use this when no
  * encryption secret is available; flip to a real AES-GCM impl in prod.
  */
 const identityCrypto: Crypto = {

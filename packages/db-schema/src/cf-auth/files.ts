@@ -2,7 +2,7 @@
 //
 // Tables:
 //   files              — per-file metadata; R2 owns the blob (see r2_key).
-//   workspace_backups  — per-(tenant, environment) DirectoryBackup handle
+//   workspace_backups  — per-(user, environment) DirectoryBackup handle
 //                        registry. backup_handle is a small JSON blob
 //                        stored as TEXT.
 //
@@ -16,7 +16,7 @@ export const files = sqliteTable(
   "files",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     session_id: text("session_id"),
     scope: text("scope").notNull(),
     filename: text("filename").notNull(),
@@ -28,8 +28,8 @@ export const files = sqliteTable(
     created_at: integer("created_at").notNull(),
   },
   (t) => [
-    index("idx_files_tenant_created").on(t.tenant_id, t.created_at),
-    index("idx_files_tenant_session_created").on(t.tenant_id, t.session_id, t.created_at),
+    index("idx_files_user_created").on(t.user_id, t.created_at),
+    index("idx_files_user_session_created").on(t.user_id, t.session_id, t.created_at),
     index("idx_files_session").on(t.session_id),
   ],
 );
@@ -39,7 +39,7 @@ export const workspace_backups = sqliteTable(
   {
     // INTEGER PRIMARY KEY AUTOINCREMENT.
     id: integer("id").primaryKey({ autoIncrement: true }),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     environment_id: text("environment_id").notNull(),
     // JSON: { id, dir, localBucket? } from CF Sandbox SDK createBackup().
     backup_handle: text("backup_handle").notNull(),
@@ -49,7 +49,7 @@ export const workspace_backups = sqliteTable(
   },
   (t) => [
     index("idx_workspace_backups_scope_recent").on(
-      t.tenant_id,
+      t.user_id,
       t.environment_id,
       t.created_at,
     ),

@@ -1,4 +1,4 @@
-// Better-auth + tenant + membership tables (CF SQLite / D1).
+// Better Auth tables (CF SQLite / D1).
 //
 // Tables:
 //   tenant       — tenant root row. createdAt / updatedAt are camelCase
@@ -16,17 +16,7 @@
 // Source: apps/main/migrations/_archive/0001_schema.sql (auth section)
 // + apps/main/migrations/_archive/0005_membership.sql.
 
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
-
-export const tenant = sqliteTable("tenant", {
-  id: text("id").primaryKey().notNull(),
-  name: text("name").notNull(),
-  // camelCase + mode:"timestamp" matches the better-auth tenant row
-  // and apps/main/src/db/schema.ts. PG variant uses snake_case BIGINT —
-  // drift is intentional, will be reconciled in a later phase.
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
-});
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey().notNull(),
@@ -40,12 +30,9 @@ export const user = sqliteTable("user", {
   // No FK constraint here — better-auth deletes via its own cascades and
   // the project convention is "no DB FKs except where better-auth
   // mandates them" (see _archive/0001_schema.sql header).
-  tenantId: text("tenantId"),
-  role: text("role").notNull().default("member"), // owner | admin | member
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
 });
-
 export const session = sqliteTable("session", {
   id: text("id").primaryKey().notNull(),
   expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
@@ -86,22 +73,3 @@ export const verification = sqliteTable("verification", {
   createdAt: integer("createdAt", { mode: "timestamp" }),
   updatedAt: integer("updatedAt", { mode: "timestamp" }),
 });
-
-export const membership = sqliteTable(
-  "membership",
-  {
-    user_id: text("user_id").notNull(),
-    tenant_id: text("tenant_id").notNull(),
-    // owner | admin | member
-    role: text("role").notNull().default("member"),
-    // Raw integer (unix seconds in the original migration; ms in newer
-    // writes — adapter normalizes). NOT mode:"timestamp" — keep parity
-    // with the existing CF baseline.
-    created_at: integer("created_at").notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.user_id, t.tenant_id] }),
-    index("idx_membership_user").on(t.user_id),
-    index("idx_membership_tenant").on(t.tenant_id),
-  ],
-);

@@ -14,7 +14,7 @@ import type { FileRow, FileScope } from "./types";
 
 interface InMemFile {
   id: string;
-  tenant_id: string;
+  user_id: string;
   session_id: string | null;
   scope: FileScope;
   filename: string;
@@ -31,7 +31,7 @@ export class InMemoryFileRepo implements FileRepo {
   async insert(input: NewFileInput): Promise<FileRow> {
     const row: InMemFile = {
       id: input.id,
-      tenant_id: input.tenantId,
+      user_id: input.userId,
       session_id: input.sessionId,
       scope: input.scope,
       filename: input.filename,
@@ -45,15 +45,15 @@ export class InMemoryFileRepo implements FileRepo {
     return toRow(row);
   }
 
-  async get(tenantId: string, fileId: string): Promise<FileRow | null> {
+  async get(userId: string, fileId: string): Promise<FileRow | null> {
     const row = this.byId.get(fileId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     return toRow(row);
   }
 
-  async list(tenantId: string, opts: FileListOptions): Promise<FileRow[]> {
+  async list(userId: string, opts: FileListOptions): Promise<FileRow[]> {
     let rows = Array.from(this.byId.values()).filter(
-      (f) => f.tenant_id === tenantId,
+      (f) => f.user_id === userId,
     );
     if (opts.sessionId !== undefined) {
       rows = rows.filter((f) => f.session_id === opts.sessionId);
@@ -67,9 +67,9 @@ export class InMemoryFileRepo implements FileRepo {
     return rows.slice(0, opts.limit).map(toRow);
   }
 
-  async delete(tenantId: string, fileId: string): Promise<FileRow | null> {
+  async delete(userId: string, fileId: string): Promise<FileRow | null> {
     const row = this.byId.get(fileId);
-    if (!row || row.tenant_id !== tenantId) return null;
+    if (!row || row.user_id !== userId) return null;
     this.byId.delete(fileId);
     return toRow(row);
   }
@@ -128,7 +128,7 @@ export function createInMemoryFileService(opts?: {
 function toRow(f: InMemFile): FileRow {
   return {
     id: f.id,
-    tenant_id: f.tenant_id,
+    user_id: f.user_id,
     session_id: f.session_id,
     scope: f.scope,
     filename: f.filename,

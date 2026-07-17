@@ -6,7 +6,7 @@ interface Crypto {
 const IV_BYTES = 12;
 const KEY_BYTES = 32;
 
-/** Generic Node-side AES-GCM implementation for tenant secrets. */
+/** Generic Node-side AES-GCM implementation for user secrets. */
 export class WebCryptoAesGcm implements Crypto {
   private keyPromise: Promise<CryptoKey> | null = null;
 

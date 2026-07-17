@@ -23,7 +23,7 @@ export class NodeModelResolver {
   ) {}
 
   async resolve(input: {
-    tenantId: string;
+    userId: string;
     agent: AgentConfig;
   }): Promise<NodeModelResolverResult> {
     const credentials = await this.resolveCredentials(input);
@@ -41,7 +41,7 @@ export class NodeModelResolver {
   }
 
   async resolveCredentials(input: {
-    tenantId: string;
+    userId: string;
     agent: AgentConfig;
   }): Promise<{
     provider: string;
@@ -55,12 +55,12 @@ export class NodeModelResolver {
       ? input.agent.model
       : input.agent.model?.id ?? "";
     const card = await this.modelCards.findByModelId({
-      tenantId: input.tenantId,
+      userId: input.userId,
       modelId,
     });
     if (card) {
       const apiKey = await this.modelCards.getApiKey({
-        tenantId: input.tenantId,
+        userId: input.userId,
         cardId: card.id,
       });
       if (!apiKey) throw new Error(`model card ${card.model_id} has no usable API key`);
@@ -76,7 +76,7 @@ export class NodeModelResolver {
 
     if (!this.options.allowEnvironmentFallback || !this.options.fallbackApiKey) {
       throw new Error(
-        `No model card with model_id "${modelId}" for tenant ${input.tenantId}`,
+        `No model card with model_id "${modelId}" for user ${input.userId}`,
       );
     }
     return {

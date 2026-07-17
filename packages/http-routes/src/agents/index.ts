@@ -25,7 +25,7 @@ import type { RouteServicesArg } from "../types";
 import { resolveServices } from "../types";
 
 interface Vars {
-  Variables: { tenant_id: string; user_id?: string };
+  Variables: { user_id: string };
 }
 
 function formatAgent(agent: AgentConfig) {
@@ -87,8 +87,8 @@ function formatAgent(agent: AgentConfig) {
   };
 }
 
-function toApiAgent(row: AgentConfig & { tenant_id?: string }) {
-  const { tenant_id: _t, ...rest } = row;
+function toApiAgent(row: AgentConfig & { user_id?: string }) {
+  const { user_id: _t, ...rest } = row;
   return formatAgent(rest);
 }
 
@@ -133,12 +133,12 @@ export interface AgentRoutesDeps {
   /** Optional model card validation. CF passes a function backed by
    *  services.modelCards; Node passes nothing → validation skipped. */
   validateModel?: (
-    tenantId: string,
+    userId: string,
     model: string | { id: string; speed?: string },
   ) => Promise<{ valid: boolean; error?: string }>;
-  /** Optional tenant-scoped skill/version validation for self-host. */
+  /** Optional user-scoped skill/version validation for self-host. */
   validateSkills?: (
-    tenantId: string,
+    userId: string,
     skills: AgentConfig["skills"],
   ) => Promise<{ valid: boolean; error?: string }>;
   /** Optional field-size cap check. CF passes apps/main/src/lib/limits;
@@ -146,13 +146,13 @@ export interface AgentRoutesDeps {
   validateAgentLimits?: (body: unknown) => { ok: boolean; error?: string };
   /** Active-sessions guard for DELETE — true means "refuse with 409". */
   hasActiveSessionsByAgent?: (
-    tenantId: string,
+    userId: string,
     agentId: string,
   ) => Promise<boolean>;
   /** Active-evals guard for DELETE — CF blocks while runs target this
    *  agent. Node returns false (no eval runner yet). */
   hasActiveEvalsByAgent?: (
-    tenantId: string,
+    userId: string,
     agentId: string,
   ) => Promise<boolean>;
 }
@@ -205,24 +205,24 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       if (!limitCheck.ok) return c.json({ error: limitCheck.error }, 400);
     }
 
-    const tenantId = c.var.tenant_id;
+    const userId = c.var.user_id;
     const isLocalRuntime = !!body.runtime_binding;
     if (!isLocalRuntime && deps.validateModel) {
-      const r = await deps.validateModel(tenantId, body.model);
+      const r = await deps.validateModel(userId, body.model);
       if (!r.valid) return c.json({ error: r.error }, 400);
       if (body.aux_model !== undefined) {
         const aux = body.aux_model ?? body.model;
-        const ar = await deps.validateModel(tenantId, aux);
+        const ar = await deps.validateModel(userId, aux);
         if (!ar.valid) return c.json({ error: `aux_model: ${ar.error}` }, 400);
       }
     }
     if (deps.validateSkills && body.skills) {
-      const skills = await deps.validateSkills(tenantId, body.skills);
+      const skills = await deps.validateSkills(userId, body.skills);
       if (!skills.valid) return c.json({ error: skills.error }, 400);
     }
 
     const row = await services.agents.create({
-      tenantId,
+      userId,
       input: {
         name: body.name,
         model: body.model ?? "",
@@ -313,7 +313,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
     if (createdBeforeRes.err) return createdBeforeRes.err;
 
     const page = await services.agents.listPage({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       limit,
       ...(cursor ? { cursor } : {}),
       // Prefer the new `status` filter. Keep includeArchived as a back-
@@ -348,7 +348,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
   app.get("/:id", async (c) => {
     const services = resolveServices(deps.services, c);
     const row = await services.agents.get({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       agentId: c.req.param("id"),
     });
     if (!row) return c.json({ error: "Agent not found" }, 404);
@@ -361,8 +361,8 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
   ): Promise<Response> => {
     const services = resolveServices(deps.services, c);
     const id = c.req.param("id");
-    const tenantId = c.var.tenant_id;
-    const existing = await services.agents.get({ tenantId, agentId: id });
+    const userId = c.var.user_id;
+    const existing = await services.agents.get({ userId, agentId: id });
     if (!existing) return c.json({ error: "Agent not found" }, 404);
 
     const raw = (await c.req.json()) as {
@@ -419,25 +419,25 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
 
     if (!isLocalRuntime && deps.validateModel && body.model !== undefined) {
       const eff = body.model ?? existing.model;
-      const r = await deps.validateModel(tenantId, eff);
+      const r = await deps.validateModel(userId, eff);
       if (!r.valid) return c.json({ error: r.error }, 400);
     }
     if (deps.validateSkills && body.skills !== undefined && body.skills !== null) {
-      const skills = await deps.validateSkills(tenantId, body.skills);
+      const skills = await deps.validateSkills(userId, body.skills);
       if (!skills.valid) return c.json({ error: skills.error }, 400);
     }
     if (!isLocalRuntime && deps.validateModel && body.aux_model !== undefined) {
       const aux =
         body.aux_model === null ? undefined : (body.aux_model ?? existing.aux_model);
       if (aux !== undefined) {
-        const ar = await deps.validateModel(tenantId, aux);
+        const ar = await deps.validateModel(userId, aux);
         if (!ar.valid) return c.json({ error: `aux_model: ${ar.error}` }, 400);
       }
     }
 
     try {
       const row = await services.agents.update({
-        tenantId,
+        userId,
         agentId: id,
         expectedVersion: body.version,
         input: {
@@ -479,10 +479,10 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
   app.get("/:id/versions", async (c) => {
     const services = resolveServices(deps.services, c);
     const id = c.req.param("id");
-    const tenantId = c.var.tenant_id;
-    const exists = await services.agents.get({ tenantId, agentId: id });
+    const userId = c.var.user_id;
+    const exists = await services.agents.get({ userId, agentId: id });
     if (!exists) return c.json({ error: "Agent not found" }, 404);
-    const versions = await services.agents.listVersions({ tenantId, agentId: id });
+    const versions = await services.agents.listVersions({ userId, agentId: id });
     const data = versions
       .map((v) => formatAgent(v.snapshot))
       .sort((a, b) => a.version - b.version);
@@ -496,7 +496,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
     const v = parseInt(c.req.param("version"), 10);
     if (Number.isNaN(v)) return c.json({ error: "Version not found" }, 404);
     const row = await services.agents.getVersion({
-      tenantId: c.var.tenant_id,
+      userId: c.var.user_id,
       agentId: id,
       version: v,
     });
@@ -509,7 +509,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
     const services = resolveServices(deps.services, c);
     try {
       const row = await services.agents.archive({
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         agentId: c.req.param("id"),
       });
       return c.json(toApiAgent(row));
@@ -525,12 +525,12 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
   app.delete("/:id", async (c) => {
     const services = resolveServices(deps.services, c);
     const id = c.req.param("id");
-    const tenantId = c.var.tenant_id;
-    const existing = await services.agents.get({ tenantId, agentId: id });
+    const userId = c.var.user_id;
+    const existing = await services.agents.get({ userId, agentId: id });
     if (!existing) return c.json({ error: "Agent not found" }, 404);
 
     if (deps.hasActiveSessionsByAgent) {
-      const has = await deps.hasActiveSessionsByAgent(tenantId, id);
+      const has = await deps.hasActiveSessionsByAgent(userId, id);
       if (has) {
         return c.json(
           {
@@ -543,7 +543,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
     }
 
     if (deps.hasActiveEvalsByAgent) {
-      const has = await deps.hasActiveEvalsByAgent(tenantId, id);
+      const has = await deps.hasActiveEvalsByAgent(userId, id);
       if (has) {
         return c.json(
           {
@@ -555,7 +555,7 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       }
     }
 
-    await services.agents.delete({ tenantId, agentId: id });
+    await services.agents.delete({ userId, agentId: id });
     return c.json({ type: "agent_deleted", id });
   });
 

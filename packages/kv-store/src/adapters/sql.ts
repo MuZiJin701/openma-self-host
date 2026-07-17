@@ -1,12 +1,12 @@
 // Drizzle-backed KvStore. Schema lives in @open-managed-agents/db-schema
-// (kv_entries table). Tenant scoping: keys are partitioned by tenant_id;
-// callers pass the active tenant via the constructor. This is the
+// (kv_entries table). User scoping: keys are partitioned by user_id;
+// callers pass the active user via the constructor. This is the
 // self-host cousin of CfKvStore — same KvStore port, different backing.
 //
-// Why per-tenant scoping in the adapter (not in keys): consumers of KV
+// Why per-user scoping in the adapter (not in keys): consumers of KV
 // (quotas, api-keys, oauth state, skill metadata) already build keys
-// scoped to a tenant. Pulling tenant_id into a separate column lets
-// "delete tenant" be one SQL statement instead of a prefix scan.
+// scoped to a user. Pulling user_id into a separate column lets
+// "delete user" be one SQL statement instead of a prefix scan.
 
 import { and, asc, eq, gt, isNull, like, or, sql } from "drizzle-orm";
 import { kv_entries } from "@open-managed-agents/db-schema/cf-auth";
@@ -32,9 +32,9 @@ export interface SqlKvStoreOpts {
   // cfAuthSchema })` would not satisfy the default `OmaDb` (TSchema =
   // Record<string, never>). Adapter doesn't read from the schema dictionary.
   db: OmaDb<Record<string, unknown>>;
-  /** Tenant scope. Required — keys never collide across tenants. Use a
+  /** User scope. Required — keys never collide across users. Use a
    *  literal "default" for AUTH_DISABLED mode. */
-  tenantId: string;
+  userId: string;
 }
 
 type Row = typeof kv_entries.$inferSelect;
@@ -56,7 +56,7 @@ export class SqlKvStore implements KvStore {
         .from(kv_entries)
         .where(
           and(
-            eq(kv_entries.tenant_id, this.opts.tenantId),
+            eq(kv_entries.user_id, this.opts.userId),
             eq(kv_entries.key, key),
           ),
         ),
@@ -69,7 +69,7 @@ export class SqlKvStore implements KvStore {
           .delete(kv_entries)
           .where(
             and(
-              eq(kv_entries.tenant_id, this.opts.tenantId),
+              eq(kv_entries.user_id, this.opts.userId),
               eq(kv_entries.key, key),
             ),
           ),
@@ -86,18 +86,18 @@ export class SqlKvStore implements KvStore {
     } else if (opts?.expiration !== undefined) {
       expiresAt = opts.expiration * 1000;
     }
-    // UPSERT on (tenant_id, key) PK — second write wins, including TTL reset.
+    // UPSERT on (user_id, key) PK — second write wins, including TTL reset.
     await runOnce(
       this.db
         .insert(kv_entries)
         .values({
-          tenant_id: this.opts.tenantId,
+          user_id: this.opts.userId,
           key,
           value,
           expires_at: expiresAt,
         })
         .onConflictDoUpdate({
-          target: [kv_entries.tenant_id, kv_entries.key],
+          target: [kv_entries.user_id, kv_entries.key],
           set: {
             value: sql`excluded.value`,
             expires_at: sql`excluded.expires_at`,
@@ -112,7 +112,7 @@ export class SqlKvStore implements KvStore {
         .delete(kv_entries)
         .where(
           and(
-            eq(kv_entries.tenant_id, this.opts.tenantId),
+            eq(kv_entries.user_id, this.opts.userId),
             eq(kv_entries.key, key),
           ),
         ),
@@ -135,7 +135,7 @@ export class SqlKvStore implements KvStore {
         .from(kv_entries)
         .where(
           and(
-            eq(kv_entries.tenant_id, this.opts.tenantId),
+            eq(kv_entries.user_id, this.opts.userId),
             like(kv_entries.key, `${prefix}%`),
             or(isNull(kv_entries.expires_at), gt(kv_entries.expires_at, now)),
           ),

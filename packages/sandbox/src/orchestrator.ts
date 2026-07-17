@@ -11,7 +11,7 @@
 // the orchestrator never branches on provider. Capabilities are
 // introspected via the `capabilities()` helper which fakes a minimal
 // SandboxExecutor surface query (presence-of-method probe) so the
-// orchestrator can refuse session creation when a tenant policy requires
+// orchestrator can refuse session creation when a user policy requires
 // a feature the chosen provider doesn't support.
 
 import type { SandboxExecutor } from "./ports";
@@ -33,10 +33,10 @@ export interface SandboxCapabilities {
 
 export interface ProvisionInput {
   sessionId: string;
-  tenantId: string;
+  userId: string;
   /** Optional environment id — only meaningful for CF backups (per-env scope). */
   environmentId?: string;
-  /** Mount /mnt/session/outputs/ scoped to (tenantId, sessionId). */
+  /** Mount /mnt/session/outputs/ scoped to (userId, sessionId). */
   mountOutputs?: boolean;
   /** Backup config — restore from latest, or skip when undefined. */
   backup?: {
@@ -54,7 +54,7 @@ export interface SandboxOrchestrator {
 
   /** Wire outputs + backup-restore on a fresh
    *  sandbox. Called once per session, before the first user.message
-   *  reaches the harness. Throws on hard mount failures (e.g. the tenant
+   *  reaches the harness. Throws on hard mount failures (e.g. the user
    *  required readOnly memory but the provider can't enforce). */
   provision(sandbox: SandboxExecutor, input: ProvisionInput): Promise<void>;
 
@@ -63,7 +63,7 @@ export interface SandboxOrchestrator {
    *  backup return null. */
   snapshotWorkspaceNow(sandbox: SandboxExecutor, input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
   }): Promise<OrchestratorBackupHandle | null>;
 
   /** Tell a long-idle sandbox "I'm still active" — resets CF's
@@ -92,7 +92,7 @@ export interface WorkspaceBackupService {
    *  on this provider. */
   snapshot(input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
     sandbox: SandboxExecutor;
   }): Promise<OrchestratorBackupHandle | null>;
   /** Restore a backup into a fresh sandbox's /workspace before the first
@@ -100,7 +100,7 @@ export interface WorkspaceBackupService {
    *  callers treat that as "fresh /workspace, proceed". */
   restore(input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
     sandbox: SandboxExecutor;
     handle: OrchestratorBackupHandle;
   }): Promise<{ ok: boolean; error?: string }>;
@@ -108,7 +108,7 @@ export interface WorkspaceBackupService {
    *  uses this to skip the explicit handle plumbing. */
   latest(input: {
     sessionId: string;
-    tenantId: string;
+    userId: string;
   }): Promise<OrchestratorBackupHandle | null>;
 }
 
@@ -135,7 +135,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
     // Backup context (when supported) + best-effort restore.
     if (input.environmentId && sandbox.setBackupContext) {
       await sandbox.setBackupContext({
-        tenantId: input.tenantId,
+        userId: input.userId,
         environmentId: input.environmentId,
         sessionId: input.sessionId,
       });
@@ -145,12 +145,12 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
         input.backup.handle ??
         (await this.deps.backups.latest({
           sessionId: input.sessionId,
-          tenantId: input.tenantId,
+          userId: input.userId,
         }));
       if (handle) {
         const r = await this.deps.backups.restore({
           sessionId: input.sessionId,
-          tenantId: input.tenantId,
+          userId: input.userId,
           sandbox,
           handle,
         });
@@ -166,7 +166,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
     if (input.mountOutputs && sandbox.mountSessionOutputs) {
       try {
         await sandbox.mountSessionOutputs({
-          tenantId: input.tenantId,
+          userId: input.userId,
           sessionId: input.sessionId,
         });
       } catch (err) {
@@ -179,7 +179,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
 
   async snapshotWorkspaceNow(
     sandbox: SandboxExecutor,
-    input: { sessionId: string; tenantId: string },
+    input: { sessionId: string; userId: string },
   ): Promise<OrchestratorBackupHandle | null> {
     // Prefer the adapter's native snapshot when available (CF squashfs).
     if (sandbox.snapshotWorkspaceNow) {
@@ -197,7 +197,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
     if (this.deps.backups) {
       return this.deps.backups.snapshot({
         sessionId: input.sessionId,
-        tenantId: input.tenantId,
+        userId: input.userId,
         sandbox,
       });
     }

@@ -1,4 +1,4 @@
-// Better-auth + tenant + membership tables (Node-PG).
+// Better Auth tables (Node-PG).
 //
 // PG type rules (per the Drizzle adoption plan):
 //   - better-auth tables (user / session / account / verification) use
@@ -14,7 +14,6 @@ import {
   boolean,
   index,
   pgTable,
-  primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -23,13 +22,6 @@ import {
 // pre-Drizzle PG branch had snake_case; we aligned to camelCase so the same
 // runtime code (packages/auth-config ensureTenantSqlite) writes one shape
 // across both dialects.
-export const tenant = pgTable("tenant", {
-  id: text("id").primaryKey().notNull(),
-  name: text("name").notNull(),
-  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
-  updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
-});
-
 export const user = pgTable("user", {
   id: text("id").primaryKey().notNull(),
   // Better-auth: emailVerified is BOOLEAN on PG (matches schema/src/index.ts
@@ -38,10 +30,6 @@ export const user = pgTable("user", {
   emailVerified: boolean("emailVerified").notNull().default(false),
   name: text("name").notNull(),
   image: text("image"),
-  tenantId: text("tenantId"),
-  // PG branch in applyBetterAuthSchema doesn't set NOT NULL/default —
-  // mirror that.
-  role: text("role"),
   createdAt: timestamp("createdAt", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).notNull(),
 });
@@ -62,7 +50,6 @@ export const session = pgTable(
   },
   (t) => [index("idx_session_userId").on(t.userId)],
 );
-
 export const account = pgTable(
   "account",
   {
@@ -96,18 +83,4 @@ export const verification = pgTable(
     updatedAt: timestamp("updatedAt", { withTimezone: true }),
   },
   (t) => [index("idx_verification_identifier").on(t.identifier)],
-);
-
-export const membership = pgTable(
-  "membership",
-  {
-    user_id: text("user_id").notNull(),
-    tenant_id: text("tenant_id").notNull(),
-    role: text("role").notNull(),
-    created_at: bigint("created_at", { mode: "number" }).notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.user_id, t.tenant_id] }),
-    index("idx_membership_user").on(t.user_id),
-  ],
 );

@@ -37,7 +37,7 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
     await runOnce(
       this.db.insert(environments).values({
         id: input.id,
-        tenant_id: input.tenantId,
+        user_id: input.userId,
         name: input.name,
         description: input.description,
         status: input.status,
@@ -53,13 +53,13 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
         created_at: input.createdAt,
       }),
     );
-    const row = await this.get(input.tenantId, input.id);
+    const row = await this.get(input.userId, input.id);
     if (!row) throw new Error("environment vanished after insert");
     return row;
   }
 
   async get(
-    tenantId: string,
+    userId: string,
     environmentId: string,
   ): Promise<EnvironmentRow | null> {
     const row = await getOne<typeof environments.$inferSelect>(
@@ -69,7 +69,7 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
         .where(
           and(
             eq(environments.id, environmentId),
-            eq(environments.tenant_id, tenantId),
+            eq(environments.user_id, userId),
           ),
         ),
     );
@@ -77,10 +77,10 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
   }
 
   async list(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<EnvironmentRow[]> {
-    const conds = [eq(environments.tenant_id, tenantId)];
+    const conds = [eq(environments.user_id, userId)];
     if (!opts.includeArchived) conds.push(isNull(environments.archived_at));
     const rows = await getAll<typeof environments.$inferSelect>(
       this.db
@@ -93,7 +93,7 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
   }
 
   async listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       status?: "active" | "archived" | "any";
       includeArchived: boolean;
@@ -104,7 +104,7 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
       q?: string;
     },
   ): Promise<{ items: EnvironmentRow[]; hasMore: boolean }> {
-    const conds = [eq(environments.tenant_id, tenantId)];
+    const conds = [eq(environments.user_id, userId)];
     // Prefer the new 3-way `status` filter. When unset, fall back to the
     // legacy includeArchived boolean so older callers keep working.
     if (opts.status === "active") {
@@ -145,10 +145,10 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
   }
 
   async count(
-    tenantId: string,
+    userId: string,
     opts: { includeArchived: boolean },
   ): Promise<number> {
-    const conds = [eq(environments.tenant_id, tenantId)];
+    const conds = [eq(environments.user_id, userId)];
     if (!opts.includeArchived) conds.push(isNull(environments.archived_at));
     const row = await getOne<{ c: number }>(
       this.db
@@ -160,13 +160,13 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
   }
 
   async update(
-    tenantId: string,
+    userId: string,
     environmentId: string,
     update: EnvironmentUpdateFields,
   ): Promise<EnvironmentRow> {
     // Pre-check existence — Drizzle's run() result shape is dialect-specific,
     // so we read first to throw a domain error if the row is missing.
-    const existing = await this.get(tenantId, environmentId);
+    const existing = await this.get(userId, environmentId);
     if (!existing) throw new EnvironmentNotFoundError();
 
     const set: Record<string, unknown> = { updated_at: update.updatedAt };
@@ -198,21 +198,21 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
         .where(
           and(
             eq(environments.id, environmentId),
-            eq(environments.tenant_id, tenantId),
+            eq(environments.user_id, userId),
           ),
         ),
     );
-    const row = await this.get(tenantId, environmentId);
+    const row = await this.get(userId, environmentId);
     if (!row) throw new EnvironmentNotFoundError();
     return row;
   }
 
   async archive(
-    tenantId: string,
+    userId: string,
     environmentId: string,
     archivedAt: number,
   ): Promise<EnvironmentRow> {
-    const existing = await this.get(tenantId, environmentId);
+    const existing = await this.get(userId, environmentId);
     if (!existing) throw new EnvironmentNotFoundError();
     await runOnce(
       this.db
@@ -221,23 +221,23 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
         .where(
           and(
             eq(environments.id, environmentId),
-            eq(environments.tenant_id, tenantId),
+            eq(environments.user_id, userId),
           ),
         ),
     );
-    const row = await this.get(tenantId, environmentId);
+    const row = await this.get(userId, environmentId);
     if (!row) throw new EnvironmentNotFoundError();
     return row;
   }
 
-  async delete(tenantId: string, environmentId: string): Promise<void> {
+  async delete(userId: string, environmentId: string): Promise<void> {
     await runOnce(
       this.db
         .delete(environments)
         .where(
           and(
             eq(environments.id, environmentId),
-            eq(environments.tenant_id, tenantId),
+            eq(environments.user_id, userId),
           ),
         ),
     );
@@ -247,7 +247,7 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
 function toRow(r: typeof environments.$inferSelect): EnvironmentRow {
   return {
     id: r.id,
-    tenant_id: r.tenant_id,
+    user_id: r.user_id,
     name: r.name,
     description: r.description,
     status: r.status as EnvironmentStatus,
@@ -264,6 +264,6 @@ function toRow(r: typeof environments.$inferSelect): EnvironmentRow {
   };
 }
 
-function msToIso(ms: number): string {
-  return new Date(ms).toISOString();
+function msToIso(ms: number | string): string {
+  return new Date(Number(ms)).toISOString();
 }

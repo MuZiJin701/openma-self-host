@@ -17,7 +17,7 @@ export const environments = sqliteTable(
   "environments",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     name: text("name").notNull(),
     description: text("description"),
     status: text("status").notNull(),
@@ -34,7 +34,7 @@ export const environments = sqliteTable(
     image_handle: text("image_handle"),
   },
   (t) => [
-    index("idx_environments_tenant").on(t.tenant_id, t.archived_at),
-    index("idx_environments_tenant_created_id").on(t.tenant_id, t.created_at, t.id),
+    index("idx_environments_user").on(t.user_id, t.archived_at),
+    index("idx_environments_user_created_id").on(t.user_id, t.created_at, t.id),
   ],
 );

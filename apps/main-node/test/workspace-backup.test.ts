@@ -110,12 +110,12 @@ describe("NodeWorkspaceBackupService", () => {
 
     const handle = await svc.snapshot({
       sessionId: "sess_1",
-      tenantId: "tn_1",
+      userId: "tn_1",
       sandbox,
     });
     expect(handle).not.toBeNull();
     expect(handle!.id).toMatch(/^wsb_/);
-    expect(handle!.dir).toContain("workspace-backups/tn_1/sess_1/");
+    expect(handle!.dir).toContain("tn_1/.openma/backups/sess_1/");
 
     // Row landed in workspace_backups (post-0011 shape: handle JSON +
     // source_session_id, no blob_key).
@@ -126,17 +126,17 @@ describe("NodeWorkspaceBackupService", () => {
       .bind("sess_1")
       .first<{ id: number; backup_handle: string; created_at: number }>();
     expect(r).not.toBeNull();
-    expect(r!.backup_handle).toContain("workspace-backups/tn_1/sess_1/");
+    expect(r!.backup_handle).toContain("tn_1/.openma/backups/sess_1/");
 
     // latest() returns it.
-    const latest = await svc.latest({ sessionId: "sess_1", tenantId: "tn_1" });
+    const latest = await svc.latest({ sessionId: "sess_1", userId: "tn_1" });
     expect(latest?.id).toBe(handle!.id);
 
     // Restore into a fresh sandbox.
     const fresh = new FakeSandbox();
     const restored = await svc.restore({
       sessionId: "sess_1",
-      tenantId: "tn_1",
+      userId: "tn_1",
       sandbox: fresh,
       handle: handle!,
     });
@@ -147,7 +147,7 @@ describe("NodeWorkspaceBackupService", () => {
   });
 
   it("latest() returns null when no backups exist", async () => {
-    const r = await svc.latest({ sessionId: "sess_none", tenantId: "tn_1" });
+    const r = await svc.latest({ sessionId: "sess_none", userId: "tn_1" });
     expect(r).toBeNull();
   });
 });

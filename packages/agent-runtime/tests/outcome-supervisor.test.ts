@@ -68,7 +68,7 @@ function makeFakeHarness(opts: {
   h.deps = {
     outcome: opts.outcome,
     initialIteration: 0,
-    tenantId: "tnt-test",
+    userId: "tnt-test",
     filesBucket: opts.filesBucketGet
       ? ({ get: opts.filesBucketGet } as unknown as R2Bucket)
       : null,

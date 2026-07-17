@@ -119,7 +119,7 @@ interface ExecutorHooks {
     reason: "cancelled" | "timeout",
   ): void | Promise<void>;
   resolveContext?(sessionId: string): Promise<{
-    tenantId: string;
+    userId: string;
     agentId: string;
   }>;
   workerPool?: WorkerPool;
@@ -148,12 +148,12 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
 
   async enqueue(
     sessionId: string,
-    tenantId: string,
+    userId: string,
     agentId: string,
     event: SessionEvent,
   ): Promise<QueueReceipt> {
     const receipt = await this.queue.enqueue({ sessionId, event });
-    this.schedule(sessionId, { sessionId, tenantId, agentId });
+    this.schedule(sessionId, { sessionId, userId, agentId });
     return receipt;
   }
 
@@ -186,7 +186,7 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
 
   private schedule(
     sessionId: string,
-    defaults: Partial<Pick<SessionTurnInput, "tenantId" | "agentId">> & {
+    defaults: Partial<Pick<SessionTurnInput, "userId" | "agentId">> & {
       sessionId: string;
     },
   ): void {
@@ -208,7 +208,7 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
 
   private async drain(
     sessionId: string,
-    defaults: Partial<Pick<SessionTurnInput, "tenantId" | "agentId">> & {
+    defaults: Partial<Pick<SessionTurnInput, "userId" | "agentId">> & {
       sessionId: string;
     },
   ): Promise<void> {
@@ -234,15 +234,15 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
         await this.queue.markTurn?.(sessionId, (promoted.eventId), "running");
         const event = JSON.parse(promoted.data) as SessionEvent;
         const context =
-          defaults.tenantId && defaults.agentId
-            ? { tenantId: defaults.tenantId, agentId: defaults.agentId }
+          defaults.userId && defaults.agentId
+            ? { userId: defaults.userId, agentId: defaults.agentId }
             : await this.hooks.resolveContext?.(sessionId);
-        if (!context?.tenantId || !context.agentId) {
+        if (!context?.userId || !context.agentId) {
           throw new Error(`missing turn routing context for session ${sessionId}`);
         }
         input = {
           sessionId,
-          tenantId: context.tenantId,
+          userId: context.userId,
           agentId: context.agentId,
           event,
           pendingSeq: promoted.pendingSeq,
@@ -252,7 +252,7 @@ export class SerialSessionTurnExecutor implements SessionTurnExecutor {
           this.active.get(sessionId)!.jobId = jobId;
           await this.hooks.workerPool.submit({
             jobId,
-            tenantId: context.tenantId,
+            userId: context.userId,
             sessionId,
             run: (signal) => this.runner.run(input!, signal),
           });

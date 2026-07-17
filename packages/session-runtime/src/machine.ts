@@ -53,7 +53,7 @@ export interface HarnessRunFn {
 
 export interface SessionMachineDeps {
   sessionId: string;
-  tenantId: string;
+  userId: string;
 
   /** Single shared adapter for I/O. */
   adapter: RuntimeAdapter;

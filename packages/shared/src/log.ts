@@ -6,7 +6,7 @@
 //
 // Usage:
 //   import { log, logWarn, logError } from "@open-managed-agents/shared";
-//   log({ op: "session.create", session_id, tenant_id }, "session created");
+//   log({ op: "session.create", session_id, user_id }, "session created");
 //   logError({ op: "session.delete.cleanup", session_id, err }, "cleanup failed");
 //
 // Conventions:
@@ -14,7 +14,7 @@
 //   - `err` is auto-normalized: Error → {message, name, stack[:6]}, string passes
 //     through, anything else gets JSON.stringify. Never log a raw Error directly
 //     because `String(err)` collapses the stack.
-//   - Always include the IDs you have in scope (session_id, tenant_id, agent_id)
+//   - Always include the IDs you have in scope (session_id, user_id, agent_id)
 //     so post-hoc grep can correlate to a specific request.
 
 export interface LogContext {
@@ -22,7 +22,7 @@ export interface LogContext {
    *  field used for dashboards / alerts / metric grouping. */
   op?: string;
   session_id?: string;
-  tenant_id?: string;
+  user_id?: string;
   agent_id?: string;
   seq?: number;
   /** Any thrown value. Errors get message/name/stack extracted; other values

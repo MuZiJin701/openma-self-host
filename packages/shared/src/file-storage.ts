@@ -1,15 +1,15 @@
 /**
  * R2 key scheme for file storage.
  *
- * Single bucket (FILES_BUCKET), tenant isolation by key prefix.
+ * Single bucket (FILES_BUCKET), user isolation by key prefix.
  * Used by:
  * - apps/main/src/routes/files.ts        (upload/download/delete)
  * - apps/main/src/routes/sessions.ts     (file_id resolver in events POST,
  *                                         scoped-copy in createSession resources)
  * - apps/agent/src/runtime/resource-mounter.ts (mount file_id to sandbox FS)
  */
-export function fileR2Key(tenantId: string, fileId: string): string {
-  return `t/${tenantId}/files/${fileId}`;
+export function fileR2Key(userId: string, fileId: string): string {
+  return `${encodeURIComponent(userId)}/.openma/files/${encodeURIComponent(fileId)}`;
 }
 
 /**
@@ -18,25 +18,25 @@ export function fileR2Key(tenantId: string, fileId: string): string {
  * us stream them into the sandbox without loading the whole bundle.
  */
 export function skillFileR2Key(
-  tenantId: string,
+  userId: string,
   skillId: string,
   version: string,
   filename: string,
 ): string {
-  return `t/${tenantId}/skills/${skillId}/${version}/${filename}`;
+  return `${encodeURIComponent(userId)}/.openma/files/skills/${encodeURIComponent(skillId)}/${encodeURIComponent(version)}/${encodeURIComponent(filename)}`;
 }
 
 /**
  * R2 key prefix for files the agent writes to /mnt/session/outputs/. Same
- * tenant-isolated layout as fileR2Key but a separate top-level namespace
+ * user-isolated layout as fileR2Key but a separate top-level namespace
  * so the regular /files surface and the magic-dir surface can't collide.
  *
  * Used by apps/main's session-outputs routes + cascade-delete cleanup;
  * self-host Node uses the host filesystem under the equivalent path
- * (<outputsRoot>/<tenantId>/<sessionId>/).
+ * (<outputsRoot>/<userId>/<sessionId>/).
  */
-export function sessionOutputsPrefix(tenantId: string, sessionId: string): string {
-  return `t/${tenantId}/session-outputs/${sessionId}/`;
+export function sessionOutputsPrefix(userId: string, sessionId: string): string {
+  return `${encodeURIComponent(userId)}/.openma/outputs/${encodeURIComponent(sessionId)}/`;
 }
 
 /** Filename → media-type guess for `/mnt/session/outputs/` listings. Used

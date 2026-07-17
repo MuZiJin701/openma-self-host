@@ -12,12 +12,12 @@ interface MultipartFile {
 export interface NodeFileRoutesDeps {
   files: FileService;
   filesBlob: BlobStore;
-  sessionExists: (input: { tenantId: string; sessionId: string }) => Promise<boolean>;
+  sessionExists: (input: { userId: string; sessionId: string }) => Promise<boolean>;
 }
 
-/** Node's tenant-scoped multipart file surface used by the Console. */
+/** Node's user-scoped multipart file surface used by the Console. */
 export function buildNodeFileRoutes(deps: NodeFileRoutesDeps) {
-  const app = new Hono<{ Variables: { tenant_id: string } }>();
+  const app = new Hono<{ Variables: { user_id: string } }>();
 
   app.post("/", async (c) => {
     const form = await c.req.parseBody();
@@ -27,14 +27,14 @@ export function buildNodeFileRoutes(deps: NodeFileRoutesDeps) {
     }
 
     const scopeId = typeof form.scope_id === "string" ? form.scope_id.trim() : "";
-    if (scopeId && !(await deps.sessionExists({ tenantId: c.var.tenant_id, sessionId: scopeId }))) {
+    if (scopeId && !(await deps.sessionExists({ userId: c.var.user_id, sessionId: scopeId }))) {
       return c.json({ error: "Session not found" }, 404);
     }
 
     const file = rawFile as MultipartFile;
     const bytes = new Uint8Array(await file.arrayBuffer());
     const fileId = generateFileId();
-    const blobKey = fileR2Key(c.var.tenant_id, fileId);
+    const blobKey = fileR2Key(c.var.user_id, fileId);
     const mediaType = file.type || "application/octet-stream";
     const filename = file.name || "file";
     const downloadable = form.downloadable === undefined || form.downloadable === "true";
@@ -43,7 +43,7 @@ export function buildNodeFileRoutes(deps: NodeFileRoutesDeps) {
       await deps.filesBlob.put(blobKey, bytes, { httpMetadata: { contentType: mediaType } });
       const row = await deps.files.create({
         id: fileId,
-        tenantId: c.var.tenant_id,
+        userId: c.var.user_id,
         sessionId: scopeId || undefined,
         filename,
         mediaType,

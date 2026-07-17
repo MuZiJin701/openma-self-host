@@ -27,7 +27,7 @@ export const sessions = sqliteTable(
   "sessions",
   {
     id: text("id").primaryKey().notNull(),
-    tenant_id: text("tenant_id").notNull(),
+    user_id: text("user_id").notNull(),
     // Nullable: orphan-session crash recovery legitimately writes rows
     // without an active agent (the agent may have been deleted before
     // the worker crashed mid-turn). Matches pre-Drizzle applySchema;
@@ -51,15 +51,15 @@ export const sessions = sqliteTable(
     terminated_at: integer("terminated_at"),
   },
   (t) => [
-    index("idx_sessions_tenant_created").on(t.tenant_id, t.created_at),
-    index("idx_sessions_tenant_agent").on(t.tenant_id, t.agent_id, t.archived_at),
-    index("idx_sessions_tenant_environment").on(t.tenant_id, t.environment_id, t.archived_at),
-    index("idx_sessions_tenant_created_id").on(t.tenant_id, t.created_at, t.id),
+    index("idx_sessions_user_created").on(t.user_id, t.created_at),
+    index("idx_sessions_user_agent").on(t.user_id, t.agent_id, t.archived_at),
+    index("idx_sessions_user_environment").on(t.user_id, t.environment_id, t.archived_at),
+    index("idx_sessions_user_created_id").on(t.user_id, t.created_at, t.id),
     // Partial: only running rows. Keeps the orphan scan tiny.
-    index("idx_sessions_running").on(t.tenant_id, t.id).where(sql`"status" = 'running'`),
+    index("idx_sessions_running").on(t.user_id, t.id).where(sql`"status" = 'running'`),
     // Partial: terminated rows for cost / dashboard joins.
     index("idx_sessions_terminated")
-      .on(t.tenant_id, t.terminated_at)
+      .on(t.user_id, t.terminated_at)
       .where(sql`"terminated_at" IS NOT NULL`),
   ],
 );

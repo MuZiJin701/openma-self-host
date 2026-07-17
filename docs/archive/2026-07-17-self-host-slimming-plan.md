@@ -33,8 +33,8 @@
 - Modify: `DUAL_TABLE_DESIGN.md`
 - Modify: `ORDERING_DESIGN.md`
 - Modify: `SECURITY.md`
-- Modify: `docs/superpowers/plans/2026-07-15-openma-self-host.md`
-- Modify: `docs/superpowers/specs/2026-07-17-self-host-slimming-design.md`
+- Modify: `docs/archive/2026-07-15-openma-self-host.md`
+- Modify: `docs/archive/2026-07-17-self-host-slimming-design.md`
 
 - [x] **Step 1: 写入全局精简规则**
 
@@ -241,7 +241,7 @@ Expected: 只剩核心配置；Postgres 的 `DATABASE_URL`、migration 和 schem
 - Modify: `README.zh-CN.md`
 - Modify: `openma-self-host-operations.md`
 - Modify: `docs/plans/2026-07-16-openma-self-host-next.md`
-- Modify: `docs/superpowers/specs/2026-07-17-self-host-slimming-design.md`
+- Modify: `docs/archive/2026-07-17-self-host-slimming-design.md`
 
 - [x] **Step 1: 运行核心验证**
 

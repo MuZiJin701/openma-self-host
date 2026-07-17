@@ -109,7 +109,7 @@ export function AgentFormDialog({
   const createDialogRef = useRef<HTMLDivElement>(null);
   const createPreviousFocus = useRef<HTMLElement | null>(null);
 
-  // Pre-select default model card when entering the form step. (tenant_id,
+  // Pre-select default model card when entering the form step. (user_id,
   // model_id) is UNIQUE in DB, so picking a card uniquely determines the
   // model. Skip if user/paste already set model. Re-runs when modelCards
   // arrives if the dialog opened before the aux fetch.

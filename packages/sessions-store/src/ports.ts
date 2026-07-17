@@ -19,7 +19,7 @@ import type { SessionResourceRow, SessionRow } from "./types";
 
 export interface NewSessionInput {
   id: string;
-  tenantId: string;
+  userId: string;
   agentId: string;
   environmentId: string;
   title: string;
@@ -55,7 +55,7 @@ export interface SessionUpdateFields {
 }
 
 export interface SessionListOptions {
-  /** Optional agent filter — uses indexed (tenant_id, agent_id) path. */
+  /** Optional agent filter — uses indexed (user_id, agent_id) path. */
   agentId?: string;
   /** Whether to include rows with archived_at != NULL. */
   includeArchived: boolean;
@@ -75,16 +75,16 @@ export interface SessionRepo {
     resources: NewSessionResourceInput[],
   ): Promise<{ session: SessionRow; resources: SessionResourceRow[] }>;
 
-  get(tenantId: string, sessionId: string): Promise<SessionRow | null>;
+  get(userId: string, sessionId: string): Promise<SessionRow | null>;
 
   /**
-   * Cross-tenant lookup by id — replaces the `sidx:` reverse-index pattern
+   * Cross-user lookup by id — replaces the `sidx:` reverse-index pattern
    * (internal.ts:381-409). `id` is globally unique so a direct WHERE id = ?
    * is O(1).
    */
   getById(sessionId: string): Promise<SessionRow | null>;
 
-  list(tenantId: string, opts: SessionListOptions): Promise<SessionRow[]>;
+  list(userId: string, opts: SessionListOptions): Promise<SessionRow[]>;
 
   /**
    * Cursor-paginated list. Order: created_at DESC, id DESC tie-break (the
@@ -98,7 +98,7 @@ export interface SessionRepo {
    * so cursors stay valid across filter combinations.
    */
   listPage(
-    tenantId: string,
+    userId: string,
     opts: {
       agentId?: string;
       includeArchived: boolean;
@@ -112,39 +112,39 @@ export interface SessionRepo {
     },
   ): Promise<{ items: SessionRow[]; hasMore: boolean }>;
 
-  /** Returns true if any non-archived session in the tenant references this agent. */
-  hasActiveByAgent(tenantId: string, agentId: string): Promise<boolean>;
+  /** Returns true if any non-archived session in the user references this agent. */
+  hasActiveByAgent(userId: string, agentId: string): Promise<boolean>;
 
-  /** Returns true if any non-archived session in the tenant references this environment. */
-  hasActiveByEnvironment(tenantId: string, environmentId: string): Promise<boolean>;
+  /** Returns true if any non-archived session in the user references this environment. */
+  hasActiveByEnvironment(userId: string, environmentId: string): Promise<boolean>;
 
-  /** Cheap COUNT(*) for /v1/stats. Index `idx_sessions_tenant_created` covers it. */
-  count(tenantId: string, opts: { includeArchived: boolean }): Promise<number>;
+  /** Cheap COUNT(*) for /v1/stats. Index `idx_sessions_user_created` covers it. */
+  count(userId: string, opts: { includeArchived: boolean }): Promise<number>;
 
   update(
-    tenantId: string,
+    userId: string,
     sessionId: string,
     update: SessionUpdateFields,
   ): Promise<SessionRow>;
 
-  archive(tenantId: string, sessionId: string, archivedAt: number): Promise<SessionRow>;
+  archive(userId: string, sessionId: string, archivedAt: number): Promise<SessionRow>;
 
   /** Hard-delete a session AND cascade-delete its session_resources in one batch. */
-  deleteWithResources(tenantId: string, sessionId: string): Promise<void>;
+  deleteWithResources(userId: string, sessionId: string): Promise<void>;
 
   /**
    * Cascade hard-delete every session for an agent (and all their resources).
    * Replaces the KV list+filter loop in agents.ts:340-348 / cleanup paths.
    * Returns the count of sessions deleted (so callers can log + emit metrics).
    */
-  deleteByAgent(tenantId: string, agentId: string): Promise<number>;
+  deleteByAgent(userId: string, agentId: string): Promise<number>;
 
   // ── session_resources operations ──
 
   insertResource(input: NewSessionResourceInput): Promise<SessionResourceRow>;
 
-  /** Fetch a single resource. Tenant ownership is verified at the service layer
-   * via a session lookup; the resource row carries no tenant_id by design (it
+  /** Fetch a single resource. User ownership is verified at the service layer
+   * via a session lookup; the resource row carries no user_id by design (it
    * inherits from session_id). */
   getResource(sessionId: string, resourceId: string): Promise<SessionResourceRow | null>;
 

@@ -8,7 +8,7 @@
 //     `/v1/model_cards/:id/key` route). List/get responses carry only
 //     `api_key_preview` (last 4 chars), matching the legacy KV row shape.
 //   - `is_default` is denormalized (boolean) for fast `getDefault` reads.
-//     The DB enforces "at most one default per tenant" via a partial UNIQUE
+//     The DB enforces "at most one default per user" via a partial UNIQUE
 //     index — see the migration for the index definition + rationale.
 //   - `archived_at` is included for forward compatibility with a soft-delete
 //     pattern; the legacy KV path used hard delete and we keep that as the
@@ -24,10 +24,10 @@
 
 export interface ModelCardRow {
   id: string;
-  tenant_id: string;
-  /** Tenant-unique user-facing handle (e.g. "claude-prod", "bedrock-sonnet").
+  user_id: string;
+  /** User-unique user-facing handle (e.g. "claude-prod", "bedrock-sonnet").
    *  Agents reference cards via `agent.model = card.model_id`. UNIQUE per
-   *  tenant — same string can't pin two different credentials. */
+   *  user — same string can't pin two different credentials. */
   model_id: string;
   /** Actual LLM model string sent to the provider's API on each turn
    *  (e.g. "claude-sonnet-4-6", "gpt-4o"). No uniqueness constraint —

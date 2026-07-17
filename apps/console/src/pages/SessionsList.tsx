@@ -59,7 +59,7 @@ export function SessionsList() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-fg">Sessions</h1>
-          <p className="text-sm text-fg-subtle mt-1">Conversation history in the tenant workspace.</p>
+          <p className="text-sm text-fg-subtle mt-1">Conversation history in the user workspace.</p>
         </div>
         <Button onClick={() => setShowCreate(true)}>New session</Button>
       </div>

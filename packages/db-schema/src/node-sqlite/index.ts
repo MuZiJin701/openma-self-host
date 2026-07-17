@@ -10,5 +10,4 @@
 // drizzle-kit consumes this barrel via drizzle.node-sqlite.config.ts.
 
 export * from "../cf-auth";
-export * from "../cf-router";
 export * from "../self-host-skills";

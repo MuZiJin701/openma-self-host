@@ -1,16 +1,16 @@
 # OpenMA Self-Host
 
-OpenMA Self-Host 是一个精简的多用户 Agent 服务。共享 SQLite 或 PostgreSQL 数据库存放
-租户配置和业务元数据；每个租户派生一个独立 Workspace，保存该用户的全部内容。Console、
-项目 SDK、CLI 和 Anthropic 兼容 HTTP 客户端共享同一套 `/v1` 接口。
+OpenMA Self-Host 是一个精简的多用户 Agent 服务。共享 PostgreSQL 数据库存放配置和业务
+元数据（SQLite 继续用于单机开发和测试）；每个认证用户在 `DATA_DIR/<user.id>` 下拥有
+一个 Workspace。Console、项目 SDK、CLI 和 Anthropic 兼容 HTTP 客户端共享同一套 `/v1` 接口。
 
 ## 核心范围
 
-- Agent、Session、租户/Workspace 隔离、Model Cards、Skills、Environment、Files
+- Agent、Session、用户/Workspace 隔离、Model Cards、Skills、Environment、Files
 - 保留 Environment CRUD，但创建记录只能选择 `env-local-runtime`
 - Session 只使用可信本地 `subprocess` 执行后端
 - 本地文件 Blob；简单部署使用 SQLite，共享部署使用 PostgreSQL
-- 通过租户 Model Cards 调用本地或云端 Anthropic-compatible 模型
+- 通过用户 Model Cards 调用本地或云端 Anthropic-compatible 模型
 
 Vault、Memory、Dreams、Evals、Integrations、MCP、OAuth、Webhook、Runtime Daemon、远程
 sandbox provider、S3 和 Cloudflare Worker 均不属于本项目。历史 migration 为向前兼容保留，
@@ -38,6 +38,8 @@ docker compose -f docker-compose.postgres.yml up --build
 ```
 
 Console 构建到 `apps/console/dist` 后，可通过 `CONSOLE_DIR` 让 Node 服务提供静态文件。
+`DATA_DIR` 是 SQLite 数据库和用户 Workspace 的统一根目录，系统内部文件位于
+`DATA_DIR/<user.id>/.openma/`。
 
 ## 精简规则
 
