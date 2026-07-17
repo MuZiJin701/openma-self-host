@@ -23,9 +23,8 @@ import type { EnvironmentRow, EnvironmentStatus } from "../types";
  * Drizzle implementation of {@link EnvironmentRepo}. Owns the queries against
  * the `environments` table defined in apps/main/migrations/0003_environments_table.sql.
  *
- * Hot fields (status, sandbox_worker_name) live in their own columns so the
- * sandbox-binding resolver in routes/sessions.ts (and friends) can read them
- * without parsing the `config` JSON.
+ * Local environments keep only their user-facing definition and lifecycle
+ * fields; provider-specific build columns are not part of this adapter.
  */
 export class SqlEnvironmentRepo implements EnvironmentRepo {
   private readonly db: OmaDbBuilder;
@@ -41,15 +40,8 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
         name: input.name,
         description: input.description,
         status: input.status,
-        sandbox_worker_name: input.sandboxWorkerName,
-        build_error: input.buildError,
         config: JSON.stringify(input.config),
         metadata: input.metadata !== null ? JSON.stringify(input.metadata) : null,
-        image_strategy: input.imageStrategy ?? null,
-        image_handle:
-          input.imageHandle !== undefined && input.imageHandle !== null
-            ? JSON.stringify(input.imageHandle)
-            : null,
         created_at: input.createdAt,
       }),
     );
@@ -173,22 +165,11 @@ export class SqlEnvironmentRepo implements EnvironmentRepo {
     if (update.name !== undefined) set.name = update.name;
     if (update.description !== undefined) set.description = update.description;
     if (update.status !== undefined) set.status = update.status;
-    if (update.sandboxWorkerName !== undefined) {
-      set.sandbox_worker_name = update.sandboxWorkerName;
-    }
-    if (update.buildError !== undefined) set.build_error = update.buildError;
     if (update.config !== undefined) {
       set.config = JSON.stringify(update.config);
     }
     if (update.metadata !== undefined) {
       set.metadata = update.metadata !== null ? JSON.stringify(update.metadata) : null;
-    }
-    if (update.imageStrategy !== undefined) {
-      set.image_strategy = update.imageStrategy;
-    }
-    if (update.imageHandle !== undefined) {
-      set.image_handle =
-        update.imageHandle !== null ? JSON.stringify(update.imageHandle) : null;
     }
 
     await runOnce(
@@ -251,13 +232,8 @@ function toRow(r: typeof environments.$inferSelect): EnvironmentRow {
     name: r.name,
     description: r.description,
     status: r.status as EnvironmentStatus,
-    sandbox_worker_name: r.sandbox_worker_name,
-    build_error: r.build_error,
     config: JSON.parse(r.config) as EnvironmentConfig["config"],
     metadata: r.metadata !== null ? (JSON.parse(r.metadata) as Record<string, unknown>) : null,
-    image_strategy: (r.image_strategy as EnvironmentRow["image_strategy"]) ?? null,
-    image_handle:
-      r.image_handle !== null ? (JSON.parse(r.image_handle) as Record<string, unknown>) : null,
     created_at: msToIso(r.created_at),
     updated_at: r.updated_at !== null ? msToIso(r.updated_at) : null,
     archived_at: r.archived_at !== null ? msToIso(r.archived_at) : null,

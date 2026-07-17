@@ -14,12 +14,6 @@ interface SkillEntry {
   skill_id: string;
   version?: string;
 }
-interface CallableEntry {
-  type: "agent";
-  id: string;
-  version: number;
-}
-
 const ANTHROPIC_SKILLS = [
   { id: "xlsx", label: "Excel (xlsx)" },
   { id: "pdf", label: "PDF" },
@@ -46,7 +40,6 @@ const INITIAL_FORM = {
   description: "",
   modelCardId: "",
   skills: [] as SkillEntry[],
-  callableAgents: [] as CallableEntry[],
   // Built-in tool policy. `agent_toolset_20260401` toolset's
   // `default_config` controls fallback enabled/permission for any
   // tool without a specific override. `toolOverrides` is a per-tool
@@ -55,8 +48,6 @@ const INITIAL_FORM = {
   toolDefaultEnabled: true,
   toolDefaultPermission: "always_allow" as "always_allow" | "always_ask",
   toolOverrides: {} as Record<string, ToolOverride>,
-  // Opt-in to the built-in `general_subagent` tool.
-  enableGeneralSubagent: false,
 };
 
 interface AgentFormDialogProps {
@@ -69,11 +60,9 @@ interface AgentFormDialogProps {
   /** Data sets the form's pickers pull from. The parent fetches these
    *  on mount (loadAux) and passes them down so the dialog doesn't have
    *  to re-fetch on every open. */
-  allAgents: Agent[];
   customSkills: Array<{ id: string; name: string; description: string }>;
   modelCards: ModelCard[];
 }
-
 /**
  * Create-agent dialog. Multi-step (template → form) with three editor
  * modes (form / yaml / json). Owns all of its own state — `form`,
@@ -91,7 +80,6 @@ export function AgentFormDialog({
   open,
   onClose,
   onCreated,
-  allAgents,
   customSkills,
   modelCards,
 }: AgentFormDialogProps) {
@@ -102,7 +90,7 @@ export function AgentFormDialog({
   const [createStep, setCreateStep] = useState<"template" | "form">("template");
   const [templateSearch, setTemplateSearch] = useState("");
   const [form, setForm] = useState({ ...INITIAL_FORM });
-  const [tab, setTab] = useState<"basic" | "tools" | "skills" | "agents">("basic");
+  const [tab, setTab] = useState<"basic" | "tools" | "skills">("basic");
   const [createMode, setCreateMode] = useState<"form" | "yaml" | "json">("form");
   const [codeValue, setCodeValue] = useState("");
 
@@ -222,12 +210,6 @@ export function AgentFormDialog({
         tools: buildToolsField(),
       };
       if (form.skills.length) payload.skills = form.skills;
-      if (form.callableAgents.length) {
-        payload.multiagent = { type: "coordinator", agents: form.callableAgents };
-      }
-      if (form.enableGeneralSubagent) {
-        payload.enable_general_subagent = true;
-      }
       const agent = await api<Agent>("/v1/agents", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -254,16 +236,6 @@ export function AgentFormDialog({
       });
     }
   };
-
-  const addCallable = (agentId: string) => {
-    if (form.callableAgents.find((c) => c.id === agentId)) return;
-    setForm({
-      ...form,
-      callableAgents: [...form.callableAgents, { type: "agent", id: agentId, version: 1 }],
-    });
-  };
-  const removeCallable = (i: number) =>
-    setForm({ ...form, callableAgents: form.callableAgents.filter((_, j) => j !== i) });
 
   const selectTemplate = (tmpl: AgentTemplate) => {
     if (tmpl.id === "blank") {
@@ -292,12 +264,6 @@ export function AgentFormDialog({
     if (form.description) config.description = form.description;
     config.tools = buildToolsField();
     if (form.skills.length) config.skills = form.skills;
-    if (form.callableAgents.length) {
-      config.multiagent = { type: "coordinator", agents: form.callableAgents };
-    }
-    if (form.enableGeneralSubagent) {
-      config.enable_general_subagent = true;
-    }
     return config;
   };
 
@@ -350,14 +316,10 @@ export function AgentFormDialog({
           system: String(parsed.system || ""),
           description: String(parsed.description || ""),
           skills: Array.isArray(parsed.skills) ? (parsed.skills as SkillEntry[]) : [],
-          callableAgents: Array.isArray(parsed.multiagent?.agents)
-            ? (parsed.multiagent.agents as CallableEntry[])
-            : [],
           toolDefaultEnabled: dc.enabled ?? true,
           toolDefaultPermission:
             dc.permission_policy?.type === "always_ask" ? "always_ask" : "always_allow",
           toolOverrides: overrides,
-          enableGeneralSubagent: parsed.enable_general_subagent === true,
         });
       } catch {
         /* keep current form if parse fails */
@@ -579,20 +541,6 @@ export function AgentFormDialog({
                         <span className="ml-1 text-xs opacity-60">({form.skills.length})</span>
                       )}
                     </button>
-                    <button
-                      role="tab"
-                      aria-selected={tab === "agents"}
-                      tabIndex={tab === "agents" ? 0 : -1}
-                      onClick={() => setTab("agents")}
-                      className={tabCls("agents")}
-                    >
-                      Multi-Agent{" "}
-                      {form.callableAgents.length > 0 && (
-                        <span className="ml-1 text-xs opacity-60">
-                          ({form.callableAgents.length})
-                        </span>
-                      )}
-                    </button>
                   </div>
                 )}
               </div>
@@ -639,15 +587,6 @@ export function AgentFormDialog({
                   />
                 )}
 
-                {createMode === "form" && tab === "agents" && (
-                  <AgentsTab
-                    form={form}
-                    setForm={setForm}
-                    allAgents={allAgents}
-                    addCallable={addCallable}
-                    removeCallable={removeCallable}
-                  />
-                )}
               </div>
 
               <div className="px-6 py-4 border-t border-border flex justify-between items-center">
@@ -656,9 +595,6 @@ export function AgentFormDialog({
                     <>
                       {form.skills.length > 0 && (
                         <span className="mr-3">{form.skills.length} skills</span>
-                      )}
-                      {form.callableAgents.length > 0 && (
-                        <span>{form.callableAgents.length} agents</span>
                       )}
                     </>
                   )}
@@ -687,7 +623,6 @@ export function AgentFormDialog({
     </>
   );
 }
-
 type FormState = typeof INITIAL_FORM;
 type FormSetter = React.Dispatch<React.SetStateAction<FormState>>;
 
@@ -817,8 +752,6 @@ function ToolsTab({
 
       <p className="text-xs text-fg-subtle leading-relaxed">
         Built-in toolset (AMA <span className="font-mono">agent_toolset_20260401</span>).
-        Multi-agent delegation lives in its own tab and is a separate field{" "}
-        <span className="font-mono">multiagent</span>.
       </p>
 
       <div className="rounded-md border border-border bg-bg-surface px-3 py-3">
@@ -1037,102 +970,6 @@ function SkillsTab({
           </p>
         )}
       </div>
-    </div>
-  );
-}
-
-function AgentsTab({
-  form,
-  setForm,
-  allAgents,
-  addCallable,
-  removeCallable,
-}: {
-  form: FormState;
-  setForm: FormSetter;
-  allAgents: Agent[];
-  addCallable: (agentId: string) => void;
-  removeCallable: (i: number) => void;
-}) {
-  return (
-    <div className="space-y-5">
-      {/* Built-in general sub-agent — opt-in. */}
-      <div className="rounded-md border border-border bg-bg-surface px-3 py-3">
-        <label className="flex items-start gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.enableGeneralSubagent}
-            onChange={(e) => setForm({ ...form, enableGeneralSubagent: e.target.checked })}
-            className="accent-brand mt-0.5"
-          />
-          <div>
-            <div className="font-medium text-fg">Enable general sub-agent</div>
-            <p className="text-xs text-fg-subtle mt-0.5">
-              Exposes a built-in{" "}
-              <span className="font-mono">general_subagent(task)</span> tool. Spawns a
-              generic sub-agent thread (reserved id{" "}
-              <span className="font-mono">general</span>) inheriting this agent's model +
-              sandbox, with a safe built-in tool subset
-              (bash/read/write/edit/grep/glob). No roster setup needed.
-            </p>
-          </div>
-        </label>
-      </div>
-
-      <div>
-        <label className="text-sm font-medium text-fg block">Callable Agents</label>
-        <p className="text-xs text-fg-subtle mb-2">
-          Specific agents this agent can delegate to via{" "}
-          <span className="font-mono">call_agent_&lt;id&gt;</span> tools.
-        </p>
-      </div>
-
-      {form.callableAgents.map((ca, i) => {
-        const agentInfo = allAgents.find((a) => a.id === ca.id);
-        return (
-          <div
-            key={i}
-            className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg"
-          >
-            <div className="flex-1">
-              <div className="text-sm font-medium text-fg">{agentInfo?.name || ca.id}</div>
-              <div className="text-xs text-fg-subtle font-mono">{ca.id}</div>
-            </div>
-            <button
-              onClick={() => removeCallable(i)}
-              className="inline-flex items-center justify-center min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 px-2 text-fg-subtle hover:text-danger transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)]"
-            >
-              ×
-            </button>
-          </div>
-        );
-      })}
-
-      <div>
-        <label className="text-xs text-fg-muted block mb-1">Add agent</label>
-        <Combobox<Agent>
-          value=""
-          onValueChange={(v) => {
-            if (v) addCallable(v);
-          }}
-          endpoint="/v1/agents"
-          getValue={(a) => a.id}
-          getLabel={(a) => (
-            <span>
-              {a.name} <span className="text-fg-subtle text-[12px]">({a.id})</span>
-            </span>
-          )}
-          getTextLabel={(a) => `${a.name} (${a.id})`}
-          placeholder="Select an agent..."
-          excludeIds={form.callableAgents.map((c) => c.id)}
-        />
-      </div>
-
-      {form.callableAgents.length === 0 && allAgents.length === 0 && (
-        <p className="text-xs text-fg-subtle">
-          Create other agents first to enable multi-agent delegation.
-        </p>
-      )}
     </div>
   );
 }

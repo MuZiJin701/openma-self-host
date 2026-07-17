@@ -25,7 +25,6 @@ const STATUS_OPTIONS: { value: StatusValue; label: string }[] = [
 export function AgentsList() {
   const { api } = useApi();
   const nav = useNavigate();
-  const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [customSkills, setCustomSkills] = useState<
     Array<{ id: string; name: string; description: string }>
   >([]);
@@ -65,10 +64,7 @@ export function AgentsList() {
   } = useInfiniteApiQuery<Agent>("/v1/agents", { limit: 20, params: agentsParams });
 
   // Aux fetches that aren't paginated UI surfaces — refreshed on mount and
-  // after agent CRUD. Pull all agents (for the callable-agents dropdown)
-  // separately so it isn't constrained by the main list's page size.
-  //
-  // Failures of the secondary fetches (skills / model cards) are
+  // after agent CRUD. Failures of the secondary fetches (skills / model cards) are
   // tolerated and logged: missing data degrades a dropdown but shouldn't
   // block agent CRUD. Failures of the primary `/v1/agents` call surface
   // via the toast that `useApi` raises automatically; setting `auxLoading`
@@ -76,8 +72,6 @@ export function AgentsList() {
   const loadAux = async () => {
     setAuxLoading(true);
     try {
-      const all = await api<{ data: Agent[] }>("/v1/agents?limit=200&status=any");
-      setAllAgents(all.data);
       await Promise.allSettled([
         (async () => {
           const sk = await api<{
@@ -284,7 +278,6 @@ export function AgentsList() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreated={refreshAgents}
-        allAgents={allAgents}
         customSkills={customSkills}
         modelCards={modelCards}
       />

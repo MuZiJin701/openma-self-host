@@ -1,12 +1,10 @@
-// Abstract ports the EnvironmentService depends on. Same DIP pattern as
-// packages/credentials-store/src/ports.ts and packages/sessions-store/src/ports.ts.
+// Abstract ports the EnvironmentService depends on.
 //
 // Keep these tiny and runtime-agnostic: no Cloudflare types, no D1 query
 // language. Pass plain data + return plain data.
 //
-// User routing: every method takes `userId` as the first argument. This
-// is intentional — it makes userId a routing key, so a future per-user-D1
-// adapter can pick a database per call without any port changes.
+// User routing: every method takes `userId` as the first argument so all
+// resource ownership checks remain explicit at the store boundary.
 
 import type { EnvironmentConfig } from "@open-managed-agents/shared";
 import type { PageCursor } from "@open-managed-agents/shared";
@@ -18,14 +16,8 @@ export interface NewEnvironmentInput {
   name: string;
   description: string | null;
   status: EnvironmentStatus;
-  sandboxWorkerName: string | null;
-  buildError: string | null;
   config: EnvironmentConfig["config"];
   metadata: Record<string, unknown> | null;
-  /** Image-build strategy. Null = legacy (treated as `dockerfile`). */
-  imageStrategy?: "base_snapshot" | "dockerfile" | null;
-  /** Strategy-specific opaque blob — see EnvironmentRow.image_handle. */
-  imageHandle?: Record<string, unknown> | null;
   createdAt: number;
 }
 
@@ -36,19 +28,15 @@ export interface NewEnvironmentInput {
  *   - null      : clear the column (set to NULL)
  *   - value     : set the column
  *
- * Pulled apart from create input so the route layer can express "clear the
- * build_error after a successful retry" without conflating it with leave-as-is.
+ * Pulled apart from create input so the route layer can express nullable
+ * field updates without conflating them with leave-as-is.
  */
 export interface EnvironmentUpdateFields {
   name?: string;
   description?: string | null;
   status?: EnvironmentStatus;
-  sandboxWorkerName?: string | null;
-  buildError?: string | null;
   config?: EnvironmentConfig["config"];
   metadata?: Record<string, unknown> | null;
-  imageStrategy?: "base_snapshot" | "dockerfile" | null;
-  imageHandle?: Record<string, unknown> | null;
   updatedAt: number;
 }
 

@@ -204,7 +204,7 @@ export interface HarnessContext {
   /**
    * Platform-resolved reminders the default `onSessionInit` will inject as
    * `<system-reminder>` user.message events on first session run. Sources:
-   * skill metadata and opted-in appendable_prompts.
+   * skill metadata.
    *
    * Custom harnesses can ignore this and inject differently — or skip
    * platform reminders entirely by overriding onSessionInit with a no-op.

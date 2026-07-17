@@ -99,6 +99,7 @@ Vault、Memory、Dreams、Evals、Integrations、OAuth、Webhook、Runtime Daemo
 
 ## 当前验证状态
 
-- 本轮已验证 `pnpm typecheck`、`pnpm db:check` 和 `git diff --check`；上一轮还验证 Node/Console 类型检查、Session Runtime、main-node、Console 测试和 Console production build。
+- 本轮已验证 `pnpm typecheck`、`pnpm db:check`、`pnpm --filter @openma/sdk build`、Console/main-node 回归和 `git diff --check`；上一轮还验证 Node/Console 类型检查、Session Runtime、main-node、Console 测试和 Console production build。
 - user_id schema、认证归属和新的单用户目录布局已实现；核心验证结果记录在 `docs/plans/2026-07-16-openma-self-host-next.md`。
 - 已完成 SQLite 双用户资源隔离、Workspace 布局和本地回归；Docker Desktop PostgreSQL 容器已通过 `/health`、核心资源 HTTP 创建、Session `/exec` 和 `data/usr_local` Workspace 写入验收。该 smoke 使用 `AUTH_DISABLED=1`，不等同于真实认证双用户 HTTP 验收。
+- Agent 与 Environment 的 active surface 已进一步收窄：不再接受 MCP/multi-agent/aux model/custom harness 或 cloud/Docker environment 字段；历史 migration 中的旧列只由向前 migration 清理，不再由运行时读取。

@@ -46,54 +46,9 @@ export interface AgentConfig {
   model: string | { id: string; speed?: "standard" | "fast" };
   system: string;
   tools: ToolConfig[];
-  mcp_servers?: Array<{
-    name: string;
-    type: string;
-    /** Required for remote (HTTP/SSE) servers. Optional when `stdio` is set —
-     *  in that case the URL is derived from the spawned process's localhost port. */
-    url?: string;
-    authorization_token?: string;
-    /** Spawn this MCP server in the sandbox container. The process binds to
-     *  127.0.0.1:port using its built-in SSE transport, and OMA routes the
-     *  existing HTTP-based MCP tool wiring at it. Lets us host stdio-only
-     *  third-party MCP servers without a separate gateway. */
-    stdio?: {
-      command: string;             // e.g. "uvx"
-      args?: string[];             // e.g. ["my-mcp-server", "--transport", "sse", "--port", "8765"]
-      env?: Record<string, string>;
-      port: number;                // port the server listens on inside the sandbox
-      sse_path?: string;           // default "/sse"
-      ready_timeout_ms?: number;   // default 60000 — how long to wait for the port to bind
-    };
-  }>;
   skills?: Array<{ skill_id: string; type: string; version?: string }>;
-  callable_agents?: Array<{ type: "agent"; id: string; version?: number }>;
-  /**
-   * Optional auxiliary model used by tools for in-process LLM work
-   * (e.g. web_fetch summarization). Same shape as `model`.
-   * When unset, tools that would benefit from summarization fall back to
-   * returning raw content. Set this to opt into compressed tool results.
-   */
-  aux_model?: string | { id: string; speed?: "standard" | "fast" };
-  harness?: string;
   description?: string;
   metadata?: Record<string, unknown>;
-  /**
-   * Opt-in registry of prompt IDs (managed by appendable-prompts subsystem)
-   * to inject as additional system prompt segments at session/turn start.
-   * Resolved by session-do at init; empty/missing = no extra segments.
-   */
-  appendable_prompts?: string[];
-  /**
-   * Opt-in built-in delegation tool. When true, the harness exposes a
-   * `general_subagent(task)` tool that spawns a generic sub-agent thread
-   * (reserved id "general"). The sub-agent inherits this agent's model
-   * + sandbox, runs with a generic system prompt + a safe built-in tool
-   * subset, and cannot delegate further. Bypasses the `callable_agents`
-   * roster — useful for one-off task delegation without managing a
-   * dedicated sub-agent definition.
-   */
-  enable_general_subagent?: boolean;
   version: number;
   created_at: string;
   updated_at?: string;
@@ -111,27 +66,7 @@ export interface EnvironmentConfig {
   name: string;
   description?: string;
   config: {
-    type: string; // "cloud"
-    packages?: {
-      pip?: string[];
-      npm?: string[];
-      apt?: string[];
-      cargo?: string[];
-      gem?: string[];
-      go?: string[];
-    };
-    networking?: {
-      type: "unrestricted" | "limited";
-      allowed_hosts?: string[];
-      allow_mcp_servers?: boolean;
-      allow_package_managers?: boolean;
-    };
-    /** Free-form Dockerfile body — RUN/COPY/ENV lines only. Required
-     *  when `image_strategy === "dockerfile"`. The platform PREPENDS
-     *  `FROM openma/sandbox-base:latest` and REJECTS user-supplied
-     *  FROM/WORKDIR/USER/ENTRYPOINT/CMD (it owns those to keep the
-     *  harness runtime hooks intact). */
-    dockerfile?: string;
+    type: "local";
   };
   metadata?: Record<string, unknown>;
   created_at: string;
@@ -574,24 +509,6 @@ export interface SpanCompactionSummarizeEndEvent extends EventBase {
   final_text_length?: number;
 }
 
-// Aux events — platform-internal LLM calls made on behalf of a tool
-// (e.g. web_fetch summarization). Distinct from `span.model_request_*`,
-// which track the main agent loop's model calls. These let consumers
-// (cost dashboards, trajectory viewers) attribute aux usage separately.
-export interface AuxModelCallEvent extends EventBase {
-  type: "aux.model_call";
-  /** Resolved model identifier (the agent's `aux_model.id` handle). */
-  model_id: string;
-  /** What the aux model was used for. Extensible — first user is "web_summarize". */
-  task: "web_summarize" | string;
-  /** Tool-use event that triggered this aux call (for trajectory linking). */
-  parent_tool_use_id?: string;
-  duration_ms: number;
-  tokens: { input: number; output: number; cache_read?: number };
-  status: "ok" | "failed";
-  error?: string;
-}
-
 // AMA-spec pending-queue notifications. New under the dual-table refactor:
 // turn-input events (user.message / user.tool_confirmation /
 // user.custom_tool_result) live in `pending_events` between POST
@@ -675,7 +592,6 @@ export type SessionEvent =
   | SpanModelRequestEndEvent
   | SpanCompactionSummarizeStartEvent
   | SpanCompactionSummarizeEndEvent
-  | AuxModelCallEvent
   | SystemUserMessagePendingEvent
   | SystemUserMessagePromotedEvent
   | SystemUserMessageCancelledEvent;

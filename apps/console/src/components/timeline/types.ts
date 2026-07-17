@@ -48,7 +48,6 @@ export type SpanFamily =
   | "compaction"   // span.compaction_summarize_*
   | "outcome"      // span.outcome_evaluation_*
   | "thread"       // sub-agent thread lifecycle / messages
-  | "aux"          // aux.model_call (web_fetch summarizer etc.)
   | "thinking"     // agent.thinking marker
   | "marker";      // catch-all for unrecognized event types
 
@@ -67,7 +66,6 @@ export const FAMILY_DOT: Record<SpanFamily, string> = {
   compaction: "bg-accent-violet/70",
   outcome: "bg-success/70",
   thread: "bg-fg-muted",
-  aux: "bg-fg-subtle",
   thinking: "bg-fg-subtle",
   marker: "bg-fg-subtle",
 };
@@ -87,7 +85,6 @@ export const FAMILY_BAR: Record<SpanFamily, string> = {
   compaction: "bg-accent-violet/50",
   outcome: "bg-success/50",
   thread: "bg-fg-muted/50",
-  aux: "bg-fg-subtle/70",
   thinking: "bg-fg-subtle/40",
   marker: "bg-fg-subtle/40",
 };

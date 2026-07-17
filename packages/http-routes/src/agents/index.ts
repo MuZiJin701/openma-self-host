@@ -23,96 +23,21 @@ function formatAgent(agent: AgentConfig) {
       ? { id: agent.model || "", speed: "standard" as const }
       : { id: agent.model.id, speed: agent.model.speed || ("standard" as const) };
 
-  // OMA-only fields nest under `_oma:` so AMA SDK consumers ignore them
-  // while OMA tooling can read the platform extensions.
-  const oma: Record<string, unknown> = {};
-  if (agent.aux_model) {
-    oma.aux_model =
-      typeof agent.aux_model === "string"
-        ? { id: agent.aux_model, speed: "standard" as const }
-        : { id: agent.aux_model.id, speed: agent.aux_model.speed || ("standard" as const) };
-  }
-  if (agent.harness) oma.harness = agent.harness;
-  if (agent.appendable_prompts && agent.appendable_prompts.length > 0) {
-    oma.appendable_prompts = agent.appendable_prompts;
-  }
-
-  const callable = agent.callable_agents ?? [];
-  const multiagent =
-    callable.length > 0
-      ? {
-          type: "coordinator" as const,
-          agents: callable.map((c) => ({
-            type: "agent" as const,
-            id: c.id,
-            version: c.version ?? 1,
-          })),
-        }
-      : null;
-
-  const {
-    aux_model: _aux,
-    harness: _harness,
-    appendable_prompts: _ap,
-    callable_agents: _ca,
-    ...rest
-  } = agent;
-
   return {
     type: "agent" as const,
-    ...rest,
+    ...agent,
     model,
     system: agent.system || null,
     description: agent.description || null,
     skills: agent.skills || [],
-    mcp_servers: agent.mcp_servers || [],
-    multiagent,
-    callable_agents: callable,
     metadata: agent.metadata || {},
     archived_at: agent.archived_at || null,
-    ...(Object.keys(oma).length > 0 ? { _oma: oma } : {}),
   };
 }
 
 function toApiAgent(row: AgentConfig & { user_id?: string }) {
   const { user_id: _t, ...rest } = row;
   return formatAgent(rest);
-}
-
-function multiagentToCallableAgents(
-  multiagent: unknown,
-): { list: AgentConfig["callable_agents"]; error?: string } {
-  if (multiagent === null || multiagent === undefined) return { list: undefined };
-  if (typeof multiagent !== "object")
-    return { list: [], error: "multiagent must be an object" };
-  const m = multiagent as { type?: string; agents?: unknown };
-  if (m.type !== "coordinator")
-    return { list: [], error: `multiagent.type must be "coordinator"` };
-  if (!Array.isArray(m.agents))
-    return { list: [], error: "multiagent.agents must be an array" };
-  const out: NonNullable<AgentConfig["callable_agents"]> = [];
-  for (const entry of m.agents) {
-    if (typeof entry === "string") {
-      out.push({ type: "agent", id: entry, version: 1 });
-      continue;
-    }
-    if (entry && typeof entry === "object") {
-      const e = entry as { type?: string; id?: string; version?: number };
-      if (e.type === "self") {
-        return { list: [], error: `multiagent.agents: {"type":"self"} is not yet supported` };
-      }
-      if (e.type === "agent" && typeof e.id === "string") {
-        out.push({
-          type: "agent",
-          id: e.id,
-          version: typeof e.version === "number" ? e.version : 1,
-        });
-        continue;
-      }
-    }
-    return { list: [], error: `multiagent.agents: invalid roster entry ${JSON.stringify(entry)}` };
-  }
-  return { list: out };
 }
 
 export interface AgentRoutesDeps {
@@ -150,29 +75,11 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       system?: string;
       tools?: AgentConfig["tools"];
       description?: string;
-      mcp_servers?: AgentConfig["mcp_servers"];
       skills?: AgentConfig["skills"];
-      callable_agents?: AgentConfig["callable_agents"];
-      multiagent?: { type: "coordinator"; agents: unknown[] } | null;
       metadata?: Record<string, unknown>;
-      harness?: string;
-      _oma?: {
-        aux_model?: string | { id: string; speed?: "standard" | "fast" };
-        harness?: string;
-        appendable_prompts?: string[];
-      };
     }>();
 
-    const ma = multiagentToCallableAgents(raw.multiagent);
-    if (ma.error) return c.json({ error: ma.error }, 422);
-
-    const body = {
-      ...raw,
-      callable_agents: ma.list ?? raw.callable_agents,
-      aux_model: raw._oma?.aux_model,
-      harness: raw._oma?.harness ?? raw.harness,
-      appendable_prompts: raw._oma?.appendable_prompts,
-    };
+    const body = raw;
 
     if (!body.name) return c.json({ error: "name is required" }, 400);
     if (!body.model) return c.json({ error: "model is required" }, 400);
@@ -186,11 +93,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
     if (deps.validateModel) {
       const r = await deps.validateModel(userId, body.model);
       if (!r.valid) return c.json({ error: r.error }, 400);
-      if (body.aux_model !== undefined) {
-        const aux = body.aux_model ?? body.model;
-        const ar = await deps.validateModel(userId, aux);
-        if (!ar.valid) return c.json({ error: `aux_model: ${ar.error}` }, 400);
-      }
     }
     if (deps.validateSkills && body.skills) {
       const skills = await deps.validateSkills(userId, body.skills);
@@ -204,16 +106,9 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
         model: body.model ?? "",
         system: body.system,
         tools: body.tools,
-        harness: body.harness,
         description: body.description,
-        mcp_servers: body.mcp_servers,
         skills: body.skills,
-        callable_agents: body.callable_agents,
         metadata: body.metadata,
-        aux_model: body.aux_model,
-        appendable_prompts: body.appendable_prompts,
-        enable_general_subagent: (body as { enable_general_subagent?: boolean })
-          .enable_general_subagent,
       },
     });
     return c.json(toApiAgent(row), 201);
@@ -346,38 +241,11 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       system?: string | null;
       tools?: AgentConfig["tools"];
       description?: string | null;
-      mcp_servers?: AgentConfig["mcp_servers"] | null;
       skills?: AgentConfig["skills"] | null;
-      callable_agents?: AgentConfig["callable_agents"] | null;
-      multiagent?: { type: "coordinator"; agents: unknown[] } | null;
       metadata?: Record<string, unknown>;
       version?: number;
-      harness?: string;
-      _oma?: {
-        aux_model?: string | { id: string; speed?: "standard" | "fast" } | null;
-        harness?: string;
-        appendable_prompts?: string[] | null;
-      };
     };
-
-    let callableAgents: AgentConfig["callable_agents"] | null | undefined;
-    if (raw.multiagent === null) {
-      callableAgents = null;
-    } else if (raw.multiagent !== undefined) {
-      const ma = multiagentToCallableAgents(raw.multiagent);
-      if (ma.error) return c.json({ error: ma.error }, 422);
-      callableAgents = ma.list;
-    } else if (raw.callable_agents !== undefined) {
-      callableAgents = raw.callable_agents;
-    }
-
-    const body = {
-      ...raw,
-      callable_agents: callableAgents,
-      aux_model: raw._oma?.aux_model,
-      harness: raw._oma?.harness ?? raw.harness,
-      appendable_prompts: raw._oma?.appendable_prompts,
-    };
+    const body = raw;
 
     if (deps.validateAgentLimits) {
       const limitCheck = deps.validateAgentLimits(body);
@@ -393,15 +261,6 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
       const skills = await deps.validateSkills(userId, body.skills);
       if (!skills.valid) return c.json({ error: skills.error }, 400);
     }
-    if (deps.validateModel && body.aux_model !== undefined) {
-      const aux =
-        body.aux_model === null ? undefined : (body.aux_model ?? existing.aux_model);
-      if (aux !== undefined) {
-        const ar = await deps.validateModel(userId, aux);
-        if (!ar.valid) return c.json({ error: `aux_model: ${ar.error}` }, 400);
-      }
-    }
-
     try {
       const row = await services.agents.update({
         userId,
@@ -412,16 +271,9 @@ export function buildAgentRoutes(deps: AgentRoutesDeps) {
           model: body.model,
           system: body.system,
           tools: body.tools,
-          harness: body.harness,
           description: body.description,
-          mcp_servers: body.mcp_servers,
           skills: body.skills,
-          callable_agents: body.callable_agents,
           metadata: body.metadata,
-          aux_model: body.aux_model,
-          appendable_prompts: body.appendable_prompts,
-          enable_general_subagent: (body as { enable_general_subagent?: boolean })
-            .enable_general_subagent,
         },
       });
       return c.json(toApiAgent(row));

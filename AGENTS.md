@@ -30,8 +30,10 @@
 - 核心 user-scoped store、Workspace 派生路径、Session FIFO/并发、pending 恢复、取消/超时、SSE resume、Model Cards、Skills、Environment、Files 已完成 user_id 重建。
 - 本轮 self-host 精简已完成：默认 workspace、Node 后端入口、Console、SDK、配置和测试只保留核心主链；旧表和历史 migration 仅作向前迁移兼容，不代表 active API。
 - 已删除 S3/Cloudflare 运行时适配器、D1 工厂、LLM 全量日志/R2 入口、ACP runtime_binding、评估入口和孤立评估测试；Blob 只保留 local-fs 与 in-memory。
+- Agent active 配置只保留名称、模型、system、tools、Skills、description 和 metadata；MCP、multi-agent delegation、aux model、appendable prompts 和自定义 harness 入口已从 API、store、route、Console 移除。Environment active 配置只保留 `config.type=local`，旧 provider build 列通过新 migration 删除。
 - active schema、认证、stores、routes、Console 和 SDK 已删除 tenant、membership、`x-active-tenant`、tenant switch 和 tenant_id 归属路径，直接使用 Better Auth 的不可变 `user.id`。
-- 已验证：本轮 `pnpm typecheck`、`pnpm db:check` 和 `git diff --check`；此前还验证过 Session Runtime 34/34、main-node 59/59（1 个既有 skip）、Console 25/25、Console production build、用户资源隔离和 DATA_DIR 布局测试，以及 Docker PostgreSQL smoke。
+- 已验证：本轮 `pnpm typecheck`、`pnpm db:check`、`pnpm --filter @openma/sdk build`、Console/main-node 回归和 `git diff --check`；此前还验证过 Session Runtime 34/34、main-node 59/59（1 个既有 skip）、Console 25/25、Console production build、用户资源隔离和 DATA_DIR 布局测试，以及 Docker PostgreSQL smoke。
+- 本仓库未内置 CLI 可执行包；官方 `@anthropic-ai/sdk` 未安装，因此 SDK/CLI 仍只完成项目 SDK 编译和协议静态审计，未声称官方客户端真实端到端通过。
 - 尚未验证：官方 Anthropic SDK/CLI 真实端到端 smoke、浏览器联调、真实认证双用户 HTTP/Workspace 完整验收；Docker smoke 使用 `AUTH_DISABLED=1` 的 `usr_local`。
 - 稳定知识见 `openma-self-host-operations.md`；当前执行计划见 `docs/plans/2026-07-16-openma-self-host-next.md`；历史精简材料统一归档在 `docs/archive/`。
 

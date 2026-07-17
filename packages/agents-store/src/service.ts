@@ -29,15 +29,9 @@ export interface NewAgentInput {
   model: AgentConfig["model"];
   system?: string;
   tools?: ToolConfig[];
-  harness?: string;
   description?: string;
-  mcp_servers?: AgentConfig["mcp_servers"];
   skills?: AgentConfig["skills"];
-  callable_agents?: AgentConfig["callable_agents"];
   metadata?: Record<string, unknown>;
-  aux_model?: AgentConfig["aux_model"];
-  appendable_prompts?: string[];
-  enable_general_subagent?: boolean;
 }
 
 /** Mutable subset for `update`. Per-field `null` means "clear" — service
@@ -48,16 +42,10 @@ export interface UpdateAgentInput {
   model?: AgentConfig["model"];
   system?: string | null;
   tools?: ToolConfig[];
-  harness?: string;
   description?: string | null;
-  mcp_servers?: AgentConfig["mcp_servers"] | null;
   skills?: AgentConfig["skills"] | null;
-  callable_agents?: AgentConfig["callable_agents"] | null;
   /** Per-key merge — pass `{ key: "" }` or `{ key: null }` to drop a key. */
   metadata?: Record<string, unknown>;
-  aux_model?: AgentConfig["aux_model"] | null;
-  appendable_prompts?: string[] | null;
-  enable_general_subagent?: boolean | null;
 }
 
 /** Default tools value when none provided — matches agents.ts:125. */
@@ -70,15 +58,9 @@ const UPDATABLE_FIELDS = [
   "model",
   "system",
   "tools",
-  "harness",
   "description",
-  "mcp_servers",
   "skills",
-  "callable_agents",
-  "aux_model",
   "metadata",
-  "appendable_prompts",
-  "enable_general_subagent",
 ] as const;
 
 const MAX_CONCURRENT_UPDATE_RETRIES = 2;
@@ -137,15 +119,9 @@ export class AgentService {
       model: opts.input.model,
       system: opts.input.system ?? "",
       tools: opts.input.tools ?? DEFAULT_TOOLS,
-      harness: opts.input.harness,
       description: opts.input.description,
-      mcp_servers: opts.input.mcp_servers,
       skills: opts.input.skills,
-      callable_agents: opts.input.callable_agents,
       metadata: opts.input.metadata,
-      aux_model: opts.input.aux_model,
-      appendable_prompts: opts.input.appendable_prompts,
-      enable_general_subagent: opts.input.enable_general_subagent,
       version: 1,
       created_at: nowIso,
       updated_at: nowIso,

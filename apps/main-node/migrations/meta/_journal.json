@@ -15,6 +15,13 @@
       "when": 1784282962228,
       "tag": "0001_bent_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784294492370,
+      "tag": "0002_silky_tenebrous",
+      "breakpoints": true
     }
   ]
 }

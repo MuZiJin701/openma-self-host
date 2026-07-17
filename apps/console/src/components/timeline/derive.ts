@@ -236,8 +236,6 @@ export function deriveSpans(events: Event[]): { spans: Span[]; totalMs: number }
       pushSpan({ key: `a-${i}`, family: "agent", label: "agent.message", startMs, durationMs: 0 });
     } else if (e.type === "agent.thinking") {
       pushSpan({ key: `think-${i}`, family: "thinking", label: "agent.thinking", startMs, durationMs: 0 });
-    } else if (e.type === "aux.model_call") {
-      pushSpan({ key: `aux-${i}`, family: "aux", label: "aux.model_call", startMs, durationMs: 0 });
     } else if (
       e.type === "agent.thread_message_sent" ||
       e.type === "agent.thread_message_received" ||

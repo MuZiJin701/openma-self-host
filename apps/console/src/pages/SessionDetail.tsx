@@ -811,7 +811,7 @@ export function SessionDetail() {
                 //   • custom tools   → agent.custom_tool_use  + agent.tool_result        (key: tool_use_id) ← same result type
                 //   • MCP tools      → agent.mcp_tool_use     + agent.mcp_tool_result    (key: mcp_tool_use_id)
                 // The previous pairing only covered builtin → custom tools
-                // (e.g. general_subagent) showed their result as an "unpaired"
+                // A tool result without a visible matching call is shown as an "unpaired"
                 // orphan block because the use side was custom_tool_use.
                 const resultByToolUseId = new Map<string, typeof filtered[number]>();
                 // session.error → upstream model_request_end error_message

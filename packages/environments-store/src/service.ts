@@ -24,21 +24,12 @@ export interface EnvironmentServiceDeps {
 /**
  * EnvironmentService — pure business logic over abstract ports.
  *
- * Owns the environment entity (id, name, status, config, sandbox_worker_name,
- * timestamps). Replaces the KV layout `t:{user}:env:{id}` previously used by
+ * Owns the environment entity (id, name, status, config, timestamps). Replaces
+ * the KV layout `t:{user}:env:{id}` previously used by
  * routes/environments.ts.
  *
- * Does NOT own:
- *   - Sandbox worker deployment (GitHub Actions dispatch + Cloudflare service
- *     binding registration). Routes handle the orchestration via triggerBuild
- *     and call back into update() with the resulting status / sandbox_worker_name.
- *   - Active-session safety check on delete — that's a cross-store concern
- *     and lives in the route handler (calls SessionService.hasActiveByEnvironment
- *     and EvalRunService.hasActiveByEnvironment before invoking us).
- *   - Snapshot persistence inside sessions / eval runs — those rows freeze
- *     the EnvironmentConfig at session-create time so trajectory replay still
- *     works after the environment definition mutates. Routes call
- *     `toEnvironmentConfig(row)` to convert before handing to those stores.
+ * Does NOT own active-session safety checks on delete; those remain route
+ * concerns.
  */
 export class EnvironmentService {
   private readonly repo: EnvironmentRepo;
@@ -66,10 +57,7 @@ export class EnvironmentService {
     config: EnvironmentConfig["config"];
     /** Defaults to "ready" — set to "building" when triggering a CI build. */
     status?: EnvironmentStatus;
-    sandboxWorkerName?: string | null;
     metadata?: Record<string, unknown> | null;
-    imageStrategy?: "base_snapshot" | "dockerfile" | null;
-    imageHandle?: Record<string, unknown> | null;
   }): Promise<EnvironmentRow> {
     const input: NewEnvironmentInput = {
       id: opts.id ?? this.ids.environmentId(),
@@ -77,12 +65,8 @@ export class EnvironmentService {
       name: opts.name,
       description: opts.description ?? null,
       status: opts.status ?? "ready",
-      sandboxWorkerName: opts.sandboxWorkerName ?? null,
-      buildError: null,
       config: opts.config,
       metadata: opts.metadata ?? null,
-      imageStrategy: opts.imageStrategy ?? null,
-      imageHandle: opts.imageHandle ?? null,
       createdAt: this.clock.nowMs(),
     };
     return await this.repo.insert(input);
@@ -90,8 +74,8 @@ export class EnvironmentService {
 
   /**
    * Generic update — every field is optional. Pass `null` to clear a nullable
-   * field (description / sandboxWorkerName / buildError / metadata /
-   * imageStrategy / imageHandle). Pass `undefined` (omit) to leave it untouched.
+   * field (description / metadata). Pass `undefined` (omit) to leave it
+   * untouched.
    *
    * `updated_at` is bumped automatically on every call; callers don't pass it.
    */
@@ -102,11 +86,7 @@ export class EnvironmentService {
     description?: string | null;
     config?: EnvironmentConfig["config"];
     status?: EnvironmentStatus;
-    sandboxWorkerName?: string | null;
-    buildError?: string | null;
     metadata?: Record<string, unknown> | null;
-    imageStrategy?: "base_snapshot" | "dockerfile" | null;
-    imageHandle?: Record<string, unknown> | null;
   }): Promise<EnvironmentRow> {
     await this.requireEnvironment(opts);
     const update: EnvironmentUpdateFields = { updatedAt: this.clock.nowMs() };
@@ -114,13 +94,7 @@ export class EnvironmentService {
     if (opts.description !== undefined) update.description = opts.description;
     if (opts.config !== undefined) update.config = opts.config;
     if (opts.status !== undefined) update.status = opts.status;
-    if (opts.sandboxWorkerName !== undefined) {
-      update.sandboxWorkerName = opts.sandboxWorkerName;
-    }
-    if (opts.buildError !== undefined) update.buildError = opts.buildError;
     if (opts.metadata !== undefined) update.metadata = opts.metadata;
-    if (opts.imageStrategy !== undefined) update.imageStrategy = opts.imageStrategy;
-    if (opts.imageHandle !== undefined) update.imageHandle = opts.imageHandle;
     return this.repo.update(opts.userId, opts.environmentId, update);
   }
 
@@ -248,9 +222,8 @@ export class EnvironmentService {
  * Convert an internal {@link EnvironmentRow} to the API-shape
  * {@link EnvironmentConfig} from packages/shared. Drops `user_id`, drops
  * dedicated `null` columns the historical KV shape didn't expose (the legacy
- * EnvironmentConfig allowed `description?` / `sandbox_worker_name?` /
- * `build_error?` / `metadata?` / `updated_at?` / `archived_at?` — all encoded
- * as "field absent" rather than "field null"). Returns the same shape the
+ * EnvironmentConfig allowed optional description, metadata, and timestamps.
+ * Returns the same shape the
  * sessions store / eval runner persist as `environment_snapshot`.
  */
 export function toEnvironmentConfig(row: EnvironmentRow): EnvironmentConfig {

@@ -27,7 +27,7 @@ export const platformGuidance =
 
 /**
  * Compose agent.system + platform guidance + optional platform reminders
- * (skills / memory_prompts / appendable_prompts).
+ * (skills and other platform-provided reminders).
  *
  * Reminders are appended to the system prompt instead of broadcast as
  * `<system-reminder>` user.message events. The legacy approach

@@ -17,10 +17,6 @@ export interface AgentRecord {
   description?: string;
   tools?: unknown[];
   skills?: unknown[];
-  multiagent?: {
-    type: "coordinator";
-    agents: Array<{ type: "agent"; id: string; version: number }>;
-  } | null;
   created_at: string;
   updated_at?: string;
   archived_at?: string;

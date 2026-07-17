@@ -154,32 +154,17 @@ function snapshotToSessionAgent(
 ): Record<string, unknown> {
   if (!snapshot) return { type: "agent", id: agentId, version: 1 };
   const {
-    aux_model: _a,
-    harness: _h,
-    appendable_prompts: _ap,
-    callable_agents,
     archived_at: _ar,
     created_at: _ca,
     updated_at: _ua,
     metadata: _md,
     ...rest
   } = snapshot;
-  const multiagent = (callable_agents ?? []).length > 0
-    ? {
-        type: "coordinator" as const,
-        agents: (callable_agents ?? []).map((c) => ({
-          type: "agent" as const,
-          id: c.id,
-          version: c.version ?? 1,
-        })),
-      }
-    : null;
   return {
     type: "agent",
     ...rest,
     id: agentId,
     version: snapshot.version ?? 1,
-    multiagent,
   };
 }
 

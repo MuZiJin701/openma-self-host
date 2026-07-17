@@ -15,6 +15,13 @@
       "when": 1784282963337,
       "tag": "0001_clean_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784294493287,
+      "tag": "0002_giant_mad_thinker",
+      "breakpoints": true
     }
   ]
 }
