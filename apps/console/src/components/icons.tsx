@@ -171,42 +171,13 @@ export function EmptyFileIcon({ className }: IconProps) {
   );
 }
 
-/** Padlock with a combination dial in the body — the dial is the
- *  visual differentiator from a generic lock icon and from `EnvIcon`'s
- *  rectangle silhouette. */
-export function EmptyVaultIcon({ className }: IconProps) {
-  return (
-    <EmptyStateSvg className={className}>
-      <path d="M5 11 h14 a1 1 0 011 1 v7 a1 1 0 01-1 1 H5 a1 1 0 01-1-1 v-7 a1 1 0 011-1 Z" />
-      <path d="M8 11 V7 a4 4 0 018 0 V11" />
-      <circle cx="12" cy="15.5" r="2" />
-      <path d="M12 13.5 V14.5" />
-    </EmptyStateSvg>
-  );
-}
-
-/** Isometric 3D box / container. Picked over a flat rectangle so it can't
- *  be confused with `EmptyVaultIcon`'s padlock body or
- *  `EmptyRuntimeIcon`'s rack units. */
+/** Isometric 3D box / container. */
 export function EmptyEnvIcon({ className }: IconProps) {
   return (
     <EmptyStateSvg className={className}>
       <path d="M12 3 L20 7 L20 16 L12 20 L4 16 L4 7 Z" />
       <path d="M4 7 L12 11 L20 7" />
       <path d="M12 11 V20" />
-    </EmptyStateSvg>
-  );
-}
-
-/** Three vertical bars of unequal height with a baseline — reads as
- *  "benchmark results" without copying any specific chart lib. */
-export function EmptyEvalIcon({ className }: IconProps) {
-  return (
-    <EmptyStateSvg className={className}>
-      <path d="M3 20 H21" />
-      <path d="M6 20 V14 H9 V20" />
-      <path d="M11 20 V7 H14 V20" />
-      <path d="M16 20 V11 H19 V20" />
     </EmptyStateSvg>
   );
 }
@@ -220,19 +191,6 @@ export function EmptySkillIcon({ className }: IconProps) {
       <path d="M5 6 h12 v1" />
       <path d="M3 9 h14 v1" />
       <path d="M2 12 h16 a1 1 0 011 1 v6 a1 1 0 01-1 1 H2 a1 1 0 01-1-1 v-6 a1 1 0 011-1 Z" />
-    </EmptyStateSvg>
-  );
-}
-
-/** Database cylinder with one mid-line divider — the universal "data
- *  store" glyph, kept simple so it stays distinguishable from the
- *  stacked-card `EmptySkillIcon` above. */
-export function EmptyMemoryIcon({ className }: IconProps) {
-  return (
-    <EmptyStateSvg className={className}>
-      <path d="M3 6 a9 3 0 1 0 18 0 a9 3 0 1 0 -18 0" />
-      <path d="M3 6 v12 a9 3 0 0 0 18 0 V6" />
-      <path d="M3 12 a9 3 0 0 0 18 0" />
     </EmptyStateSvg>
   );
 }
@@ -262,22 +220,6 @@ export function EmptyApiKeyIcon({ className }: IconProps) {
       <path d="M10.5 12 H21" />
       <path d="M19 12 V14" />
       <path d="M16 12 V13.5" />
-    </EmptyStateSvg>
-  );
-}
-
-/** Server rack with two stacked 1U units, each with a left-side handle
- *  bar and a right-side indicator dot. Reads unmistakably as
- *  "hardware" so it can't be confused with the env container or the
- *  vault padlock. */
-export function EmptyRuntimeIcon({ className }: IconProps) {
-  return (
-    <EmptyStateSvg className={className}>
-      <path d="M3 4 h18 a1 1 0 011 1 v5 a1 1 0 01-1 1 H3 a1 1 0 01-1-1 V5 a1 1 0 011-1 Z" />
-      <path d="M3 13 h18 a1 1 0 011 1 v5 a1 1 0 01-1 1 H3 a1 1 0 01-1-1 v-5 a1 1 0 011-1 Z" />
-      <path d="M5 6 v3 M5 15 v3" />
-      <circle cx="18" cy="7.5" r="0.6" />
-      <circle cx="18" cy="16.5" r="0.6" />
     </EmptyStateSvg>
   );
 }

@@ -7,14 +7,14 @@ OpenMA Self-Host 是一个精简的多用户 Agent 服务。共享 PostgreSQL �
 ## 核心范围
 
 - Agent、Session、用户/Workspace 隔离、Model Cards、Skills、Environment、Files
-- 保留 Environment CRUD，但创建记录只能选择 `env-local-runtime`
+- 保留 Environment CRUD，但记录只能使用 `config.type=local`
 - Session 只使用可信本地 `subprocess` 执行后端
 - 本地文件 Blob；简单部署使用 SQLite，共享部署使用 PostgreSQL
 - 通过用户 Model Cards 调用本地或云端 Anthropic-compatible 模型
 
-Vault、Memory、Dreams、Evals、Integrations、MCP、OAuth、Webhook、Runtime Daemon、远程
-sandbox provider、S3 和 Cloudflare Worker 均不属于本项目。历史 migration 为向前兼容保留，
-本轮不作为接口启用，也不删除或回滚。
+Vault、Memory、Dreams、Evals、Integrations、OAuth、Webhook、Runtime Daemon、远程
+sandbox provider、S3 和 Cloudflare Worker 均不属于本项目。历史 migration 可作为向前兼容
+输入保留，但不属于 active API。
 
 ## 开发与运行
 

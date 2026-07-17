@@ -8,15 +8,14 @@ and Anthropic-compatible HTTP clients use the same `/v1` API.
 ## Core surface
 
 - Agents, Sessions, user/Workspace isolation, Model Cards, Skills, Environments, and Files
-- Environment records are available through CRUD, but only `env-local-runtime` is accepted
+- Environment records are available through CRUD; only `config.type=local` is accepted
 - Sessions run in the trusted local `subprocess` backend
 - Local filesystem blobs; SQLite for simple deployments and PostgreSQL for shared deployments
 - Local or remote Anthropic-compatible model providers configured through user Model Cards
 
-Vaults, Memory, Dreams, Evals, Integrations, MCP, OAuth, Webhook, Runtime Daemon, remote
-sandbox providers, S3, and Cloudflare Workers are outside this self-host project.
-Historical database migrations are retained for forward compatibility; they are not active API
-surfaces and are not removed or rolled back.
+Vaults, Memory, Dreams, Evals, Integrations, OAuth, Webhook, Runtime Daemon, remote sandbox
+providers, S3, and Cloudflare Workers are outside this self-host project. Historical database
+migrations may remain as forward-compatibility input; they are not active API surfaces.
 
 ## Development
 

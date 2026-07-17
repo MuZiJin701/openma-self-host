@@ -87,7 +87,7 @@ docker compose -f docker-compose.postgres.yml up --build
 
 ## 明确不启用
 
-Vault、Memory、Dreams、Evals、Integrations、MCP、OAuth、Webhook、Runtime Daemon、远程 sandbox provider、S3、Cloudflare Worker、多副本 fanout 和多副本专用 compose 均不构建、不启动、不作为交付条件。
+Vault、Memory、Dreams、Evals、Integrations、OAuth、Webhook、Runtime Daemon、远程 sandbox provider、S3、Cloudflare Worker、多副本 fanout 和多副本专用 compose 均不构建、不启动、不作为交付条件。Session pending queue 仍保留，用于消息恢复。
 
 ## 排障顺序
 
@@ -99,6 +99,6 @@ Vault、Memory、Dreams、Evals、Integrations、MCP、OAuth、Webhook、Runtime
 
 ## 当前验证状态
 
-- 上一轮精简已验证 Node/Console 类型检查、SQLite/PostgreSQL schema check、Session Runtime、main-node、Console 测试和 Console production build。
+- 本轮已验证 `pnpm typecheck`、`pnpm db:check` 和 `git diff --check`；上一轮还验证 Node/Console 类型检查、Session Runtime、main-node、Console 测试和 Console production build。
 - user_id schema、认证归属和新的单用户目录布局已实现；核心验证结果记录在 `docs/plans/2026-07-16-openma-self-host-next.md`。
 - 已完成 SQLite 双用户资源隔离、Workspace 布局和本地回归；Docker Desktop PostgreSQL 容器已通过 `/health`、核心资源 HTTP 创建、Session `/exec` 和 `data/usr_local` Workspace 写入验收。该 smoke 使用 `AUTH_DISABLED=1`，不等同于真实认证双用户 HTTP 验收。

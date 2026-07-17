@@ -6,7 +6,8 @@
 - 唯一源码目录：`/home/chenjinchi/project/openma-self-host`；所有命令在 WSL 执行。
 - 保留：Agent、Session、Workspace、Model Cards、Skills、Environment、Files、基础 auth、SQLite/localfs、PostgreSQL、可信 subprocess。
 - Environment 只能是 `config.type=local`；Session 可选择当前用户下任意 local Environment。
-- 删除：Vault、Memory、Dreams、Evals、CAP、ACP、Browser Harness、oma-vault、Scheduler、Queue、Rate Limit、Billing、Email、Markdown、S3、Docker 扩展、Cloudflare、Integrations、OAuth、Webhook、Runtime Daemon。
+- 删除：Vault、Memory、Dreams、Evals、CAP、ACP、Browser Harness、oma-vault、Scheduler、外部 Queue、Rate Limit、Billing、Email、Markdown、S3、Docker 扩展、Cloudflare、Integrations、OAuth、Webhook、Runtime Daemon。
+- 保留 Session 的数据库 pending queue；它是核心消息恢复链，不是独立的队列服务。
 
 ## 技术与安全约束
 
@@ -27,9 +28,10 @@
 ## 当前状态与证据
 
 - 核心 user-scoped store、Workspace 派生路径、Session FIFO/并发、pending 恢复、取消/超时、SSE resume、Model Cards、Skills、Environment、Files 已完成 user_id 重建。
-- 本轮 self-host 精简已完成：默认 workspace、后端入口、Console、SDK、配置和测试只保留核心主链；旧表和历史 migration 仅作向前迁移兼容，不代表 active API。
+- 本轮 self-host 精简已完成：默认 workspace、Node 后端入口、Console、SDK、配置和测试只保留核心主链；旧表和历史 migration 仅作向前迁移兼容，不代表 active API。
+- 已删除 S3/Cloudflare 运行时适配器、D1 工厂、LLM 全量日志/R2 入口、ACP runtime_binding、评估入口和孤立评估测试；Blob 只保留 local-fs 与 in-memory。
 - active schema、认证、stores、routes、Console 和 SDK 已删除 tenant、membership、`x-active-tenant`、tenant switch 和 tenant_id 归属路径，直接使用 Better Auth 的不可变 `user.id`。
-- 已验证：Node/Console 类型检查、SQLite/PostgreSQL schema check、Session Runtime 34/34、main-node 59/59（1 个既有 skip）、Console 25/25、Console production build、用户资源隔离和 DATA_DIR 布局测试；Docker Desktop PostgreSQL `/health`、核心资源 HTTP 创建、Session `/exec` 与 `data/usr_local` Workspace 写入。
+- 已验证：本轮 `pnpm typecheck`、`pnpm db:check` 和 `git diff --check`；此前还验证过 Session Runtime 34/34、main-node 59/59（1 个既有 skip）、Console 25/25、Console production build、用户资源隔离和 DATA_DIR 布局测试，以及 Docker PostgreSQL smoke。
 - 尚未验证：官方 Anthropic SDK/CLI 真实端到端 smoke、浏览器联调、真实认证双用户 HTTP/Workspace 完整验收；Docker smoke 使用 `AUTH_DISABLED=1` 的 `usr_local`。
 - 稳定知识见 `openma-self-host-operations.md`；当前执行计划见 `docs/plans/2026-07-16-openma-self-host-next.md`；历史精简材料统一归档在 `docs/archive/`。
 

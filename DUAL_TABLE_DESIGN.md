@@ -19,5 +19,5 @@ cancellation events are UI/transport notifications, not extra model messages.
 ## Migration rule
 
 The existing migration files and legacy tables stay in place. New code must use the current
-tenant-scoped event and pending repositories. Do not clear data, rewrite historical migrations,
+user-scoped event and pending repositories. Do not clear data, rewrite historical migrations,
 or add a second ordering primitive without a concrete failing test.

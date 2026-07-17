@@ -30,7 +30,6 @@ import { EnvironmentsList } from "./pages/EnvironmentsList";
 import { EnvironmentDetail } from "./pages/EnvironmentDetail";
 import { SkillsList } from "./pages/SkillsList";
 import { ModelCardsList } from "./pages/ModelCardsList";
-import { consolePlugins } from "./plugins/registry";
 
 /**
  * Router config. Migrated from declarative `<BrowserRouter><Routes>` to
@@ -102,11 +101,6 @@ const protectedRoutes: RouteObject[] = [
   },
   { path: "skills", element: <SkillsList />, handle: { crumb: "Skills" } },
   { path: "model-cards", element: <ModelCardsList />, handle: { crumb: "Model Cards" } },
-  // Plugin-contributed routes (hosted-only extensions). Default empty in
-  // OSS — hosted deploy overlays plugins/registry.ts to inject billing
-  // / etc. PluginRoute keeps the same `{ path, element }` shape that
-  // RouteObject expects.
-  ...consolePlugins.flatMap((p) => p.routes ?? []),
   { path: "*", element: <Navigate to="/agents" replace /> },
 ];
 

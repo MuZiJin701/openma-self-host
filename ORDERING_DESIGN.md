@@ -11,7 +11,7 @@ POST user.message
   -> SSE/REST/model history
 ```
 
-The queue and event log are tenant/session scoped. A process restart recovers pending and promoted
+The queue and event log are user/session scoped. A process restart recovers pending and promoted
 rows; duplicate event IDs are ignored. `user.interrupt` cancels queued inputs and interrupts the
 active subprocess. This is intentionally the only scheduling contract in self-host.
 

@@ -4,14 +4,10 @@ import {
   EmptyAgentIcon,
   EmptyApiKeyIcon,
   EmptyEnvIcon,
-  EmptyEvalIcon,
   EmptyFileIcon,
-  EmptyMemoryIcon,
   EmptyModelCardIcon,
-  EmptyRuntimeIcon,
   EmptySessionIcon,
   EmptySkillIcon,
-  EmptyVaultIcon,
 } from "./icons";
 
 /**
@@ -46,27 +42,19 @@ export type EmptyStateKind =
   | "agent"
   | "session"
   | "file"
-  | "vault"
   | "env"
-  | "eval"
   | "skill"
-  | "memory"
   | "model_card"
   | "api_key"
-  | "runtime";
 
 const KIND_ICONS: Record<EmptyStateKind, ComponentType<{ className?: string }>> = {
   agent: EmptyAgentIcon,
   session: EmptySessionIcon,
   file: EmptyFileIcon,
-  vault: EmptyVaultIcon,
   env: EmptyEnvIcon,
-  eval: EmptyEvalIcon,
   skill: EmptySkillIcon,
-  memory: EmptyMemoryIcon,
   model_card: EmptyModelCardIcon,
   api_key: EmptyApiKeyIcon,
-  runtime: EmptyRuntimeIcon,
 };
 
 interface EmptyStateProps {

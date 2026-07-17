@@ -24,7 +24,6 @@ import {
   SessionsIcon,
   SkillsIcon,
 } from "./icons";
-import { consolePlugins } from "../plugins/registry";
 
 interface NavItem {
   to: string;
@@ -100,10 +99,7 @@ const LABELED_GROUPS = new Set<string>();
 export function AppSidebar() {
   const { pathname } = useLocation();
 
-  const groups = [
-    ...navGroups,
-    ...consolePlugins.flatMap((p) => p.navGroups ?? []),
-  ];
+  const groups = navGroups;
 
   const isItemActive = (to: string, end?: boolean) => {
     if (end) return pathname === to;

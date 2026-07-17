@@ -7,7 +7,7 @@ keys, tokens, prompts, database files, or sensitive event payloads in issues or 
 
 ## Self-host boundary
 
-- Tenant membership and `tenant_id` checks are required for every resource route.
+- Authenticated `user.id` checks are required for every resource route.
 - Workspace paths are derived by the server; request bodies cannot select arbitrary host paths.
 - Model Card API keys are encrypted with `PLATFORM_ROOT_SECRET` and never returned in full.
 - `AUTH_DISABLED=1` is for local single-user development only.
