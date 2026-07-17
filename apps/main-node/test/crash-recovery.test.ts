@@ -72,7 +72,6 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
         DATABASE_PATH: join(opts.dataDir, "oma.db"),
         AUTH_DATABASE_PATH: join(opts.dataDir, "auth.db"),
         SANDBOX_WORKDIR: join(opts.dataDir, "sandboxes"),
-        MEMORY_BLOB_DIR: join(opts.dataDir, "memory-blobs"),
         AUTH_DISABLED: "1",
         BETTER_AUTH_SECRET: "test-secret-only-for-vitest-do-not-deploy",
         // Quiet — too much log noise in test output otherwise.

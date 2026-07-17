@@ -17,11 +17,6 @@ export const ROUTE_CHORDS: Record<string, string> = {
   "/sessions":      "s",
   "/files":         "f",
   "/environments":  "e",
-  "/vaults":        "v",
   "/skills":        "k",
-  "/memory":        "m",
   "/model-cards":   "c",
-  "/api-keys":      "i",
-  "/runtimes":      "r",
-  "/evals":         "h",
 };

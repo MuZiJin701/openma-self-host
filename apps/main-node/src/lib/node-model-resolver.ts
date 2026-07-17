@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 import type { AgentConfig } from "@open-managed-agents/shared";
 import type { ModelCardService } from "@open-managed-agents/model-cards-store";
-import { resolveModel } from "@open-managed-agents/agent/harness/provider";
+import { resolveModel, type ApiCompat } from "@open-managed-agents/agent/harness/provider";
 
 export interface NodeModelResolverOptions {
   fallbackApiKey?: string;
@@ -32,7 +32,7 @@ export class NodeModelResolver {
         credentials.model,
         credentials.apiKey,
         credentials.baseUrl,
-        undefined,
+        providerToApiCompat(credentials.provider),
         credentials.customHeaders,
       ),
       provider: credentials.provider,
@@ -89,5 +89,29 @@ export class NodeModelResolver {
         ? { customHeaders: this.options.fallbackCustomHeaders }
         : {}),
     };
+  }
+}
+
+/**
+ * Model cards store the provider/protocol selector. Keep the short API
+ * compatibility values as the canonical form, while accepting the readable
+ * provider names used by older self-host cards.
+ */
+function providerToApiCompat(provider: string): ApiCompat {
+  switch (provider.trim().toLowerCase()) {
+    case "ant":
+    case "anthropic":
+      return "ant";
+    case "ant-compatible":
+    case "anthropic-compatible":
+      return "ant-compatible";
+    case "oai":
+    case "openai":
+      return "oai";
+    case "oai-compatible":
+    case "openai-compatible":
+      return "oai-compatible";
+    default:
+      throw new Error(`Unsupported model provider "${provider}"`);
   }
 }

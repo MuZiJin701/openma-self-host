@@ -7,17 +7,10 @@ import { formatDuration, formatRelative, shortenId } from "../lib/format";
 import { Badge, StatusPill } from "../components/Badge";
 import { Modal } from "../components/Modal";
 import { Button } from "@/components/ui/button";
-import { AgentIcon, ClockIcon, DurationIcon, EnvIcon, VaultIcon } from "../components/icons";
+import { AgentIcon, ClockIcon, DurationIcon, EnvIcon } from "../components/icons";
 import { FilesPanel, ResourcePanel } from "./session-detail/Panels";
-import {
-  TrajectoryOutcomeChip,
-  TrajectoryRewardChip,
-  TrajectoryViewerModal,
-} from "./session-detail/Trajectory";
 import { TimelineView } from "../components/timeline/TimelineView";
 import type { Event } from "../lib/events";
-import type { Trajectory, TrajectoryOutcome } from "../lib/trajectory";
-import { rewardHeadline, outcomeToStatusTone } from "../lib/trajectory";
 // ai-elements primitives — used to render the chat surface (messages,
 // reasoning blocks, tool calls, prompt input). The components/ai-elements/
 // directory is shadcn-style copy-paste so we own + customize them locally.
@@ -97,8 +90,6 @@ export function SessionDetail() {
   const [agentId, setAgentId] = useState("");
   const [sessionMeta, setSessionMeta] = useState<{
     environmentId?: string;
-    vaultIds?: string[];
-    vaults?: Array<{ id: string; display_name?: string }>;
     createdAt?: string;
     agentSnapshot?: { id?: string; name?: string; model?: string | { id: string }; description?: string; version?: number };
     envSnapshot?: { id?: string; name?: string; description?: string };
@@ -106,18 +97,10 @@ export function SessionDetail() {
   const [resourcePanel, setResourcePanel] = useState<
     | { kind: "agent"; id: string }
     | { kind: "environment"; id: string }
-    | { kind: "vault"; id: string }
     | null
   >(null);
   const [showFiles, setShowFiles] = useState(false);
   const [status, setStatus] = useState("idle");
-  /** Lazy-fetched Trajectory v1 envelope. Drives the outcome + reward
-   *  chips in the header strip and the Trajectory viewer modal. We don't
-   *  block initial render on this — chips render as `—` until it lands.
-   *  Sentinels mirror EvalRunDetail: "loading" while in flight, "error"
-   *  if the fetch failed (404 = trajectory not built yet, 5xx = sandbox
-   *  flaky); both keep the trigger from re-firing every render. */
-  const [trajectory, setTrajectory] = useState<Trajectory | "loading" | "error" | undefined>(undefined);
   /** Sub-agent threads in this session. Primary is implicit at index 0
    *  (label "Main"). Empty when the session has only the primary thread,
    *  in which case the selector UI is hidden entirely. Refreshed on
@@ -139,7 +122,6 @@ export function SessionDetail() {
    *  is removed from this map and the canonical user.* event takes its
    *  place in the events array via the regular SSE broadcast. */
   const [pendingByEventId, setPendingByEventId] = useState<Map<string, PendingEntry>>(new Map());
-  const [showTrajectory, setShowTrajectory] = useState(false);
   const seenKeys = useRef(new Set<string>());
   const abortRef = useRef<AbortController | null>(null);
 
@@ -449,7 +431,6 @@ export function SessionDetail() {
     setAgentId("");
     setSessionMeta({});
     setStatus("idle");
-    setTrajectory(undefined);
     setThreads([]);
     setActiveThreadId("sthr_primary");
     setPendingByEventId(new Map());
@@ -458,7 +439,6 @@ export function SessionDetail() {
     // Load session info
     api<{
       environment_id?: string;
-      vault_ids?: string[];
       created_at?: string;
       agent?: { id?: string; name?: string; model?: string | { id: string }; description?: string; version?: number };
       metadata?: Record<string, unknown>;
@@ -467,29 +447,15 @@ export function SessionDetail() {
         setAgentId(s.agent?.id || "");
         setSessionMeta({
           environmentId: s.environment_id,
-          vaultIds: s.vault_ids,
           createdAt: s.created_at,
           agentSnapshot: s.agent,
         });
 
-        // Live-resolve env + vault names by id. Per the id-only ref decision
-        // (memory: session-resource-refs), the session API does not pre-bake
-        // display data — clients fetch resources on demand. Names appear a
-        // tick later than the badge frame; until then the badge falls back
-        // to the short-id label.
+        // Resolve the selected environment name for the header badge.
         if (s.environment_id) {
           api<{ id: string; name?: string; description?: string }>(`/v1/environments/${s.environment_id}`)
             .then((env) => setSessionMeta((prev) => ({ ...prev, envSnapshot: env })))
             .catch(() => {});
-        }
-        if (s.vault_ids?.length) {
-          Promise.all(
-            s.vault_ids.map((vid) =>
-              api<{ id: string; display_name?: string }>(`/v1/vaults/${vid}`)
-                .then((v) => ({ id: v.id, display_name: v.display_name }))
-                .catch(() => ({ id: vid })),
-            ),
-          ).then((vaults) => setSessionMeta((prev) => ({ ...prev, vaults })));
         }
       })
       .catch(() => {});
@@ -537,18 +503,6 @@ export function SessionDetail() {
     const abort = new AbortController();
     abortRef.current = abort;
     streamEvents(id, addEvent, abort.signal);
-
-    // Lazy-fetch the Trajectory envelope so the header chips have the
-    // outcome + reward to show. Decoupled from session/events fetches —
-    // trajectory builds on-demand off the events log, so a 5xx here is
-    // independent of session metadata loading. We do this once per
-    // session id and let the user reopen the page to refresh. Live
-    // sessions intentionally don't poll: trajectory.outcome === "running"
-    // is fine, the StatusPill already shows the live status.
-    setTrajectory("loading");
-    api<Trajectory>(`/v1/sessions/${id}/trajectory`)
-      .then((t) => setTrajectory(t))
-      .catch(() => setTrajectory("error"));
 
     // Threads list (primary + sub-agent). Primary is always present
     // (seeded by SessionDO on /init). Filter to non-primary so the
@@ -735,16 +689,7 @@ export function SessionDetail() {
       <div className="pl-3 pr-4 py-3 flex flex-col gap-2 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <StatusPill status={status as "idle" | "running" | "terminated" | "error" | string} />
-          {/* Trajectory outcome chip — only when the trajectory has actually
-              finished. While the session is still running we let StatusPill
-              carry the "Running…" signal alone (per Phase 3 spec) instead of
-              double-pilling. */}
-          <TrajectoryOutcomeChip trajectory={trajectory} />
-          {/* Reward chip — final_reward + verifier_id tooltip. Hidden when
-              the verifier hasn't run (no trajectory.reward) so we don't
-              imply "no reward = score 0". */}
-          <TrajectoryRewardChip trajectory={trajectory} />
-          {/* Always render env + agent + vault badges so an operator can
+          {/* Show agent and environment badges so an operator can
               see what makes up this session at a glance. Name falls back
               to a short ID slice if the snapshot didn't carry one — better
               "agent_…XYZ" than nothing. */}
@@ -766,14 +711,6 @@ export function SessionDetail() {
               }
             />
           )}
-          {(sessionMeta.vaults ?? sessionMeta.vaultIds?.map((id) => ({ id, display_name: undefined })) ?? []).map((v) => (
-            <Badge
-              key={v.id}
-              icon={<VaultIcon />}
-              label={v.display_name || shortenId(v.id)}
-              onClick={() => setResourcePanel({ kind: "vault", id: v.id })}
-            />
-          ))}
           <SessionDurationBadge events={events} />
           {sessionMeta.createdAt && <RelativeTimeBadge iso={sessionMeta.createdAt} />}
           <div className="ml-auto flex items-center gap-2">
@@ -830,24 +767,6 @@ export function SessionDetail() {
         {view === "timeline" && (
           <span className="ml-auto text-xs text-fg-subtle font-mono">{events.length} events</span>
         )}
-        {/* Trajectory viewer trigger — pushed to the right edge of the tab
-            row. Disabled until the lazy fetch resolves so the click never
-            opens an empty modal. Errors keep the button enabled (the modal
-            shows the error). */}
-        <button
-          onClick={() => setShowTrajectory(true)}
-          disabled={trajectory === undefined || trajectory === "loading"}
-          className={`${view === "timeline" ? "ml-3" : "ml-auto"} inline-flex items-center min-h-11 sm:min-h-0 text-xs text-fg-muted hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed bg-bg-surface/60 hover:bg-bg-surface rounded px-2 py-1 transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)] my-1.5`}
-          title={
-            trajectory === "loading"
-              ? "Loading trajectory…"
-              : trajectory === "error"
-              ? "Trajectory unavailable — click to inspect error"
-              : "View raw Trajectory v1 envelope"
-          }
-        >
-          Trajectory
-        </button>
       </div>
 
       {/* Filter by selected thread. Untagged events (legacy + spans
@@ -1154,12 +1073,6 @@ export function SessionDetail() {
           <FilesPanel sessionId={id} onClose={() => setShowFiles(false)} />
         )}
       </div>
-      <TrajectoryViewerModal
-        open={showTrajectory}
-        onClose={() => setShowTrajectory(false)}
-        sessionId={id ?? ""}
-        trajectory={trajectory}
-      />
     </div>
   );
 }

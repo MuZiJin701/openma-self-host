@@ -104,6 +104,9 @@ export interface SessionMachineDeps {
     abortSignal?: AbortSignal;
   }): Promise<unknown>;
 
+  /** Flush platform-local harness writes before the shell inspects history. */
+  afterHarnessRun?(ctx: unknown): Promise<void>;
+
   /** Publish a synthetic event to the hub (e.g. session.error,
    *  session.status_idle on recovery). The shell wires this with the
    *  in-process or DO-level hub. */
@@ -152,6 +155,7 @@ export class SessionStateMachine {
     await this.deps.adapter.beginTurn(this.deps.sessionId, turnId);
     this.deps.adapter.hintTurnInFlight?.(this.deps.sessionId, turnId);
 
+    let ctx: unknown;
     try {
       // Memory store mounts: optional adapter step, runs once per turn
       // so a session newly bound to a store picks it up on the next
@@ -170,7 +174,7 @@ export class SessionStateMachine {
 
       const tools = await this.deps.buildTools(agent, this.deps.sandbox);
       const model = await this.deps.buildModel(agent);
-      const ctx = await this.deps.buildHarnessContext({
+      ctx = await this.deps.buildHarnessContext({
         agent,
         userMessage,
         sandbox: this.deps.sandbox,
@@ -182,8 +186,12 @@ export class SessionStateMachine {
       const harness = this.deps.buildHarness();
       await harness.run(ctx);
     } finally {
-      this.activeTurnId = null;
-      await this.deps.adapter.endTurn(this.deps.sessionId, turnId, "idle");
+      try {
+        if (ctx !== undefined) await this.deps.afterHarnessRun?.(ctx);
+      } finally {
+        this.activeTurnId = null;
+        await this.deps.adapter.endTurn(this.deps.sessionId, turnId, "idle");
+      }
     }
   }
 

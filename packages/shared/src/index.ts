@@ -5,10 +5,6 @@
 // once those importers are migrated.
 export * from "@open-managed-agents/api-types";
 
-// Re-exports trajectory + scorers from @oma/eval-core for back-compat.
-// New code should import from @open-managed-agents/eval-core directly.
-export * from "@open-managed-agents/eval-core";
-
 export * from "./env";
 export * from "./errors";
 export * from "./id";
@@ -18,3 +14,4 @@ export * from "./metrics";
 export * from "./file-storage";
 export * from "./pagination";
 export * from "./sql-like";
+export * from "./trajectory";

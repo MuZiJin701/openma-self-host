@@ -105,6 +105,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
   private memoryRoot: string | null;
   private outputsRoot: string | null;
   private logger: NonNullable<LocalSubprocessSandboxOptions["logger"]>;
+  private readOnlyPaths = new Set<string>();
 
   constructor(opts: LocalSubprocessSandboxOptions) {
     this.workdir = resolve(opts.workdir);
@@ -125,6 +126,10 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
   }
 
   async exec(command: string, timeout?: number): Promise<string> {
+    return this.execWithSignal(command, timeout);
+  }
+
+  async execWithSignal(command: string, timeout?: number, signal?: AbortSignal): Promise<string> {
     const timeoutMs = timeout ?? this.defaultTimeoutMs;
     const env = this.buildEnv(command);
     const shell = process.platform === "win32"
@@ -139,10 +144,53 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
         cwd: this.workdir,
         env,
         stdio: ["ignore", "pipe", "pipe"],
+        // Put the shell and its descendants in one group so timeout/abort
+        // cannot leave a grandchild (for example `sleep`) holding stdout.
+        detached: process.platform !== "win32",
       });
 
       let stdout = "";
       let stderr = "";
+      let settled = false;
+      let forcedKillTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const killProcessGroup = (signal: NodeJS.Signals) => {
+        try {
+          if (process.platform !== "win32" && child.pid) {
+            process.kill(-child.pid, signal);
+          } else {
+            child.kill(signal);
+          }
+        } catch (err) {
+          this.logger.warn(`exec kill failed: ${(err as Error).message}`);
+        }
+      };
+
+      const onAbort = () => {
+        if (settled) return;
+        killProcessGroup("SIGTERM");
+        forcedKillTimer = setTimeout(() => killProcessGroup("SIGKILL"), 1_000);
+      };
+
+      const cleanup = () => {
+        clearTimeout(killer);
+        if (forcedKillTimer) clearTimeout(forcedKillTimer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+
+      const finish = (code: number | null, childSignal: NodeJS.Signals | null) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const exit = childSignal ? `signal=${childSignal}` : `exit=${code}`;
+        // Match @cloudflare/sandbox's behaviour: combined stdout+stderr,
+        // newline-trimmed, plus an exit-code suffix the harness can parse.
+        const combined =
+          (stdout + (stderr ? `\n${stderr}` : "")).replace(/\s+$/, "") +
+          (code !== 0 ? `\n[exit ${exit}]` : "");
+        resolveExec(combined);
+      };
+
       child.stdout?.on("data", (chunk: Buffer) => {
         stdout += chunk.toString("utf8");
       });
@@ -151,30 +199,20 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
       });
 
       const killer = setTimeout(() => {
-        try {
-          child.kill("SIGTERM");
-          // Give SIGTERM a beat, then SIGKILL.
-          setTimeout(() => {
-            try { child.kill("SIGKILL"); } catch { /* already gone */ }
-          }, 1_000);
-        } catch (err) {
-          this.logger.warn(`exec timeout-kill failed: ${(err as Error).message}`);
-        }
+        onAbort();
       }, timeoutMs);
 
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+
       child.on("close", (code, signal) => {
-        clearTimeout(killer);
-        const exit = signal ? `signal=${signal}` : `exit=${code}`;
-        // Match @cloudflare/sandbox's behaviour: combined stdout+stderr,
-        // newline-trimmed, plus an exit-code suffix the harness can parse.
-        const combined =
-          (stdout + (stderr ? `\n${stderr}` : "")).replace(/\s+$/, "") +
-          (code !== 0 ? `\n[exit ${exit}]` : "");
-        resolveExec(combined);
+        finish(code, signal);
       });
 
       child.on("error", (err) => {
-        clearTimeout(killer);
+        if (settled) return;
+        settled = true;
+        cleanup();
         resolveExec(`[error: ${err.message}]`);
       });
     });
@@ -192,7 +230,7 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
       cwd: this.workdir,
       env,
       stdio: ["ignore", "pipe", "pipe"],
-      detached: false,
+      detached: process.platform !== "win32",
     });
     if (!child.pid) return null;
     const id = `proc_${child.pid}_${Date.now()}`;
@@ -407,6 +445,12 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
     return full;
   }
 
+  async makeReadOnly(path: string): Promise<void> {
+    const full = this.resolvePath(path);
+    await this.chmodReadOnly(full);
+    this.readOnlyPaths.add(full);
+  }
+
   async writeFileBytes(path: string, bytes: Uint8Array): Promise<string> {
     this.assertWritable(path);
     const full = this.resolvePath(path);
@@ -513,15 +557,34 @@ export class LocalSubprocessSandbox implements SandboxExecutor {
    * silent successful write that gets blown away on the next mount.
    */
   private assertWritable(p: string): void {
-    if (!p.startsWith("/mnt/memory/")) return;
-    const rest = p.slice("/mnt/memory/".length);
-    const slash = rest.indexOf("/");
-    const storeName = slash === -1 ? rest : rest.slice(0, slash);
-    const mount = this.mounts.get(storeName);
-    if (mount?.readOnly) {
-      throw new Error(
-        `EACCES: memory store ${storeName} mounted read-only at /mnt/memory/${storeName}/`,
-      );
+    if (p.startsWith("/mnt/memory/")) {
+      const rest = p.slice("/mnt/memory/".length);
+      const slash = rest.indexOf("/");
+      const storeName = slash === -1 ? rest : rest.slice(0, slash);
+      const mount = this.mounts.get(storeName);
+      if (mount?.readOnly) {
+        throw new Error(
+          `EACCES: memory store ${storeName} mounted read-only at /mnt/memory/${storeName}/`,
+        );
+      }
+    }
+    const full = this.resolvePath(p);
+    for (const root of this.readOnlyPaths) {
+      if (full === root || full.startsWith(`${root}/`)) {
+        throw new Error(`EACCES: path mounted read-only at ${p}`);
+      }
+    }
+  }
+
+  private async chmodReadOnly(path: string): Promise<void> {
+    const info = await fs.stat(path);
+    if (!info.isDirectory()) {
+      await fs.chmod(path, 0o444);
+      return;
+    }
+    await fs.chmod(path, 0o555);
+    for (const entry of await fs.readdir(path, { withFileTypes: true })) {
+      await this.chmodReadOnly(join(path, entry.name));
     }
   }
 
@@ -559,7 +622,12 @@ class BackgroundProcess implements ProcessHandle {
 
   async kill(signal: string): Promise<void> {
     try {
-      this.child.kill(signal as NodeJS.Signals);
+      const nodeSignal = signal as NodeJS.Signals;
+      if (process.platform !== "win32" && this.child.pid) {
+        process.kill(-this.child.pid, nodeSignal);
+      } else {
+        this.child.kill(nodeSignal);
+      }
     } catch (err) {
       throw new Error(`kill failed: ${(err as Error).message}`);
     }
@@ -587,7 +655,6 @@ export const sandboxFactory: SandboxFactory = async (ctx) => {
     workdir: ctx.workdir,
     sessionId: ctx.sessionId,
     sharedWorkspace: ctx.sharedWorkspace,
-    memoryRoot: ctx.memoryRoot,
     outputsRoot: ctx.outputsRoot,
   });
 };

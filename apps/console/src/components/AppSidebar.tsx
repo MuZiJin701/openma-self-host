@@ -18,15 +18,12 @@ import { Logo } from "./Logo";
 import { UserProfile } from "./UserProfile";
 import {
   AgentIcon,
-  ApiKeysIcon,
   DashboardIcon,
   EnvIcon,
   FilesIcon,
-  MemoryIcon,
   ModelCardsIcon,
   SessionsIcon,
   SkillsIcon,
-  VaultIcon,
 } from "./icons";
 import { consolePlugins } from "../plugins/registry";
 
@@ -54,23 +51,19 @@ const navGroups: NavGroup[] = [
       { to: "/agents", label: "Agents", icon: AgentIcon },
       { to: "/sessions", label: "Sessions", icon: SessionsIcon },
       { to: "/files", label: "Files", icon: FilesIcon },
-      { to: "/evals", label: "Eval Runs", icon: SessionsIcon },
     ],
   },
   {
     label: "Infrastructure",
     items: [
       { to: "/environments", label: "Environments", icon: EnvIcon },
-      { to: "/vaults", label: "Credential Vaults", icon: VaultIcon },
     ],
   },
   {
     label: "Configuration",
     items: [
       { to: "/skills", label: "Skills", icon: SkillsIcon },
-      { to: "/memory", label: "Memory Stores", icon: MemoryIcon },
       { to: "/model-cards", label: "Model Cards", icon: ModelCardsIcon },
-      { to: "/api-keys", label: "API Keys", icon: ApiKeysIcon },
     ],
   },
 ];

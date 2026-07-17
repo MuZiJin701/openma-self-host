@@ -151,6 +151,11 @@ export class ModelCardService {
     await this.repo.delete(opts.tenantId, opts.cardId);
   }
 
+  async archive(opts: { tenantId: string; cardId: string }): Promise<ModelCardRow> {
+    await this.requireCard(opts);
+    return await this.repo.archive(opts.tenantId, opts.cardId, this.clock.nowMs());
+  }
+
   // ============================================================
   // Read paths
   // ============================================================

@@ -11,8 +11,6 @@
 // "sign up auto-creates a workspace" flow runs on either runtime.
 
 import { betterAuth } from "better-auth";
-import { emailOTP } from "better-auth/plugins";
-import type { EmailSender } from "@open-managed-agents/email";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 
 export interface BuildBetterAuthOpts {
@@ -26,18 +24,7 @@ export interface BuildBetterAuthOpts {
   secret: string;
   /** Public origin (used for redirect URLs + cookie domain). */
   baseURL?: string;
-  /** Email sender; null disables every email-bearing better-auth flow.
-   *  CF prod always passes a real sender; self-host without SMTP passes
-   *  null. */
-  sender: EmailSender | null;
-  /** Optional Google OAuth. */
-  googleClientId?: string;
-  googleClientSecret?: string;
-  /** When true, sign-up requires email verification before the user is
-   *  signed in. Default: false on self-host (no SMTP path), true on CF prod. */
-  requireEmailVerify?: boolean;
-  /** Cross-subdomain cookie domain (e.g. ".openma.dev"). Skip for default
-   *  per-host scoping. */
+  /** Cross-subdomain cookie domain (e.g. ".example.test"). */
   cookieDomain?: string;
   /** Idempotent ensure-tenant; called from databaseHooks.user.create.after.
    *  Runtimes pass their own implementation: CF writes to the legacy
@@ -55,79 +42,7 @@ export interface BuildBetterAuthOpts {
 
 export type BetterAuth = ReturnType<typeof betterAuth>;
 
-function otpEmailHtml(code: string, label: string): string {
-  return [
-    '<div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px">',
-    `<h2 style="margin:0 0 16px">${label}</h2>`,
-    `<p style="font-size:32px;letter-spacing:8px;font-weight:bold;margin:24px 0">${code}</p>`,
-    '<p style="color:#666;font-size:14px">This code expires in 5 minutes. If you did not request this, ignore this email.</p>',
-    "</div>",
-  ].join("");
-}
-
 export function buildBetterAuth(opts: BuildBetterAuthOpts) {
-  const socialProviders: Record<string, unknown> = {};
-  if (opts.googleClientId && opts.googleClientSecret) {
-    socialProviders.google = {
-      clientId: opts.googleClientId,
-      clientSecret: opts.googleClientSecret,
-    };
-  }
-
-  const sender = opts.sender;
-  const requireVerify = !!opts.requireEmailVerify;
-
-  const plugins: unknown[] = [];
-  if (sender) {
-    plugins.push(
-      emailOTP({
-        otpLength: 6,
-        expiresIn: 300,
-        sendVerificationOnSignUp: requireVerify,
-        async sendVerificationOTP({ email, otp, type }) {
-          const labels: Record<string, string> = {
-            "sign-in": "Your sign-in code",
-            "email-verification": "Verify your email",
-            "forget-password": "Your password reset code",
-          };
-          const label = labels[type] ?? "Your verification code";
-          await sender.send({
-            to: email,
-            subject: `${label} — openma`,
-            html: otpEmailHtml(otp, label),
-            text: `${label}: ${otp}`,
-          });
-        },
-      }),
-    );
-  }
-
-  const emailVerification = sender
-    ? {
-        sendVerificationEmail: async ({ user, url }: { user: { email: string }; url: string }) => {
-          await sender.send({
-            to: user.email,
-            subject: "Verify your email — openma",
-            html: `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px"><h2>Verify your email</h2><p>Click the button below to verify your email address.</p><a href="${url}" style="display:inline-block;padding:12px 24px;background:#111;color:#fff;text-decoration:none;border-radius:6px;margin:16px 0">Verify email</a></div>`,
-            text: `Verify your email: ${url}`,
-          });
-        },
-        sendOnSignUp: true,
-        autoSignInAfterVerification: true,
-      }
-    : undefined;
-
-  const sendResetPassword = sender
-    ? async ({ user, url }: { user: { email: string }; url: string }) => {
-        await sender.send({
-          to: user.email,
-          subject: "Reset your password — openma",
-          html: `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:32px"><h2>Reset your password</h2><a href="${url}" style="display:inline-block;padding:12px 24px;background:#111;color:#fff;text-decoration:none;border-radius:6px;margin:16px 0">Reset password</a></div>`,
-          text: `Reset your password: ${url}`,
-        });
-      }
-    : undefined;
-
   return betterAuth({
     basePath: "/auth",
     secret: opts.secret,
@@ -135,12 +50,9 @@ export function buildBetterAuth(opts: BuildBetterAuthOpts) {
     database: opts.database as never,
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: requireVerify,
-      ...(sendResetPassword ? { sendResetPassword } : {}),
+      requireEmailVerification: false,
     },
-    ...(emailVerification ? { emailVerification } : {}),
-    plugins: plugins as never,
-    socialProviders,
+    plugins: [],
     trustedOrigins: opts.baseURL ? [opts.baseURL] : ["*"],
     ...(opts.cookieDomain
       ? {

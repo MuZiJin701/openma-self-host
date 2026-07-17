@@ -15,8 +15,7 @@
 // shell around the same machine, with `alarm()` instead of bootstrap()
 // as the orphan-detection trigger).
 //
-// Sandbox provisioning (memory mounts, /mnt/session/outputs, vault
-// outbound, optional workspace-restore) is delegated to the
+// Sandbox provisioning (workspace outputs and optional backup restore) is delegated to the
 // SandboxOrchestrator from `@open-managed-agents/sandbox/orchestrator`
 // — same interface CF wires for the OmaSandbox path. Per-runtime
 // mounters were removed in P5.
@@ -29,18 +28,19 @@ import {
 import type { SqlClient } from "@open-managed-agents/sql-client";
 import { SqlStreamRepo, type SqlEventLog } from "@open-managed-agents/event-log/sql";
 import { SqlPendingQueue } from "@open-managed-agents/event-log/sql";
-import { SerialSessionTurnExecutor } from "./lib/session-turn-executor.js";
+import {
+  findPendingToolAction,
+  listPendingToolActions,
+  SerialSessionTurnExecutor,
+} from "./lib/session-turn-executor.js";
 import type { QueueReceipt, SessionTurnExecutor } from "@open-managed-agents/session-runtime";
 import type { SandboxExecutor } from "@open-managed-agents/sandbox";
-import type {
-  OrchestratorMemoryMount,
-  SandboxOrchestrator,
-} from "@open-managed-agents/sandbox/orchestrator";
+import type { SandboxOrchestrator } from "@open-managed-agents/sandbox/orchestrator";
 import type { AgentService } from "@open-managed-agents/agents-store";
 import type { SkillService } from "@open-managed-agents/skills-store";
-import type { MemoryStoreService } from "@open-managed-agents/memory-store";
 import type {
   AgentConfig,
+  ContentBlock,
   SessionEvent,
   UserMessageEvent,
 } from "@open-managed-agents/shared";
@@ -57,8 +57,7 @@ export interface SessionRegistryDeps {
   agentsService: AgentService;
   /** Tenant-scoped immutable skill store used during sandbox provisioning. */
   skillsService?: SkillService;
-  memoryService: MemoryStoreService;
-  /** Sandbox provisioning — vault outbound, mounts, backup-restore.
+  /** Sandbox provisioning — outputs and backup-restore.
    *  Replaces the per-runtime buildMemoryMounter / buildSessionOutputsMounter
    *  hooks from before P5. */
   sandboxOrchestrator: SandboxOrchestrator;
@@ -80,6 +79,7 @@ export interface SessionRegistryDeps {
     agent: AgentConfig,
     sandbox: SandboxExecutor,
     tenantId?: string,
+    options?: { allowAlwaysAsk?: boolean },
   ): Promise<unknown>;
 
   /** Build harness instance + context. Each is platform-neutral so the
@@ -232,13 +232,18 @@ export class SessionRegistry {
     event: SessionEvent,
   ): Promise<QueueReceipt> {
     const entry = await this.getOrCreate(sessionId, tenantId);
-    if (
-      event.type !== "user.message" &&
-      !entry.machine.hasInflightTurn()
-    ) {
+    if (event.type === "user.interrupt") {
       throw new SessionTurnConflictError(
-        `session ${sessionId} has no turn waiting for ${event.type}`,
+        `session ${sessionId} interrupt must use the interrupt route`,
       );
+    }
+    if (event.type !== "user.message") {
+      const events = await entry.eventLog.getEventsAsync();
+      if (!findPendingToolAction(events, event)) {
+        throw new SessionTurnConflictError(
+          `session ${sessionId} has no pending action for ${event.type}`,
+        );
+      }
     }
     return entry.executor.enqueue(sessionId, tenantId, agentId, event);
   }
@@ -269,28 +274,9 @@ export class SessionRegistry {
       ? await this.deps.agentsService.get({ tenantId, agentId: sessionRow.agent_id })
       : null;
 
-    // Resolve the per-session memory bindings + outputs flag, then hand
-    // the whole bundle to the orchestrator. The orchestrator owns
-    // ordering (vault outbound first, restore second, mounts last) so
-    // the registry no longer reasons about it.
-    const memoryBindings = await this.deps.sql
-      .prepare(`SELECT store_id, access FROM session_memory_stores WHERE session_id = ?`)
-      .bind(sessionId)
-      .all<{ store_id: string; access: string }>();
-    const memoryMounts: OrchestratorMemoryMount[] = [];
-    for (const binding of memoryBindings.results ?? []) {
-      const store = await this.deps.memoryService.getStore({ tenantId, storeId: binding.store_id });
-      if (!store) continue;
-      memoryMounts.push({
-        storeName: store.name,
-        storeId: binding.store_id,
-        readOnly: binding.access === "read_only",
-      });
-    }
     await this.deps.sandboxOrchestrator.provision(sandbox, {
       sessionId,
       tenantId,
-      memoryMounts,
       mountOutputs: true,
       backup: { restoreOnWarm: true },
     });
@@ -332,6 +318,10 @@ export class SessionRegistry {
           tenantId,
         }),
       publish: (event: SessionEvent) => this.deps.hub.publish(sessionId, event),
+      afterHarnessRun: async (ctx) => {
+        const runtime = (ctx as { runtime?: { flush?: () => Promise<void> } }).runtime;
+        await runtime?.flush?.();
+      },
     });
 
     const executor = new SerialSessionTurnExecutor(
@@ -359,16 +349,35 @@ export class SessionRegistry {
               (input.event as { session_thread_id?: string }).session_thread_id ??
               "sthr_primary",
           } as unknown as SessionEvent);
-          if (input.event.type !== "user.message") {
-            throw new Error(
-              `${input.event.type} delivery is not wired into the active harness turn`,
+          const canonicalEvents = await eventLog.getEventsAsync();
+          const action = input.event.type === "user.message"
+            ? null
+            : findPendingToolAction(canonicalEvents, input.event);
+          if (input.event.type !== "user.message" && !action) {
+            throw new SessionTurnConflictError(
+              `session ${sessionId} has no unresolved tool use for ${input.event.type}`,
+            );
+          }
+          if (action) {
+            await this.deliverToolAction(
+              sessionId,
+              tenantId,
+              sessionAgent,
+              sandbox,
+              eventLog,
+              action,
+              input.event,
+              signal,
             );
           }
           await machine.runHarnessTurn(
             input.agentId,
-            input.event as UserMessageEvent,
+            input.event.type === "user.message"
+              ? input.event as UserMessageEvent
+              : { type: "user.message", content: [] },
             signal,
           );
+          await this.publishIdleStatus(sessionId, eventLog);
         },
       },
       {
@@ -386,6 +395,12 @@ export class SessionRegistry {
               cancelled_at: row.cancelledAt ?? Date.now(),
             } as unknown as SessionEvent);
           }
+        },
+        onTurnCancelled: async (_input, _reason) => {
+          await appendAndPublish(sessionId, eventLog, this.deps.hub, {
+            type: "session.status_idle",
+            stop_reason: { type: "end_turn" },
+          } as SessionEvent);
         },
         resolveContext: async (sid) => {
           const row = await this.deps.sql
@@ -427,10 +442,116 @@ export class SessionRegistry {
     // subprocess is trusted-only; failure to chmod is surfaced as a warning
     // rather than pretending it is a security boundary.
     try {
-      await sandbox.exec("chmod -R a-w -- /mnt/skills 2>/dev/null || true", 5_000);
+      if (sandbox.makeReadOnly) {
+        await sandbox.makeReadOnly("/mnt/skills");
+      } else {
+        await sandbox.exec("chmod -R a-w -- /mnt/skills 2>/dev/null || true", 5_000);
+      }
     } catch (error) {
       log.warn({ op: "skills.mount_readonly_failed", tenant_id: tenantId, err: error }, "skill mount could not be made read-only");
     }
+  }
+
+  private async deliverToolAction(
+    sessionId: string,
+    tenantId: string,
+    agent: AgentConfig | null | undefined,
+    sandbox: SandboxExecutor,
+    eventLog: SqlEventLog,
+    pending: NonNullable<ReturnType<typeof findPendingToolAction>>,
+    event: SessionEvent,
+    abortSignal: AbortSignal,
+  ): Promise<void> {
+    let content: string | ContentBlock[] = "";
+    let isError = false;
+    if (event.type === "user.custom_tool_result") {
+      content = event.content;
+      isError = event.is_error === true;
+    } else if (event.type === "user.tool_confirmation" && event.result === "deny") {
+      content = `Tool call denied${event.deny_message ? `: ${event.deny_message}` : ""}`;
+      isError = true;
+    } else {
+      if (!agent) throw new Error(`agent unavailable for tool ${pending.toolName}`);
+      const tools = await this.deps.buildTools(agent, sandbox, tenantId, {
+        allowAlwaysAsk: true,
+      });
+      const tool = (tools as Record<string, {
+        execute?: (
+          input: Record<string, unknown>,
+          options: { toolCallId: string; messages: unknown[]; abortSignal: AbortSignal },
+        ) => Promise<unknown>;
+      }>)[pending.toolName];
+      if (!tool?.execute) {
+        content = `Error: tool ${pending.toolName} is unavailable`;
+        isError = true;
+      } else {
+        try {
+          const result = await tool.execute(pending.input, {
+            toolCallId: pending.toolUseId,
+            messages: [],
+            abortSignal,
+          });
+          content = serializeToolResult(result);
+        } catch (error) {
+          content = `Error: ${error instanceof Error ? error.message : String(error)}`;
+          isError = true;
+        }
+      }
+    }
+
+    const resultEvent = pending.resultType === "agent.mcp_tool_result"
+      ? {
+          type: "agent.mcp_tool_result" as const,
+          mcp_tool_use_id: pending.toolUseId,
+          content: serializeToolResult(content),
+          parent_event_id: pending.toolUseId,
+          ...(isError ? { is_error: true } : {}),
+        }
+      : {
+          type: "agent.tool_result" as const,
+          tool_use_id: pending.toolUseId,
+          content,
+          parent_event_id: pending.toolUseId,
+        };
+    await appendAndPublish(sessionId, eventLog, this.deps.hub, resultEvent as SessionEvent);
+  }
+
+  private async publishIdleStatus(
+    sessionId: string,
+    eventLog: SqlEventLog,
+  ): Promise<void> {
+    const pending = listPendingToolActions(await eventLog.getEventsAsync());
+    const status: SessionEvent = {
+      type: "session.status_idle",
+      stop_reason: pending.length > 0
+        ? {
+            type: "requires_action",
+            action_type: pending[0]!.kind,
+            event_ids: pending.map((item) => item.toolUseId),
+          }
+        : { type: "end_turn" },
+    } as SessionEvent;
+    await appendAndPublish(sessionId, eventLog, this.deps.hub, status);
+  }
+}
+
+async function appendAndPublish(
+  sessionId: string,
+  eventLog: SqlEventLog,
+  hub: EventStreamHub,
+  event: SessionEvent,
+): Promise<void> {
+  await eventLog.appendAsync(event);
+  const persisted = (await eventLog.getEventsAsync()).at(-1) ?? event;
+  hub.publish(sessionId, persisted);
+}
+
+function serializeToolResult(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
   }
 }
 

@@ -203,6 +203,15 @@ export class InMemoryModelCardRepo implements ModelCardRepo {
     this.byId.delete(cardId);
   }
 
+  async archive(tenantId: string, cardId: string, archivedAt: number): Promise<ModelCardRow> {
+    const row = this.byId.get(cardId);
+    if (!row || row.tenant_id !== tenantId) throw new ModelCardNotFoundError();
+    row.archived_at = archivedAt;
+    row.updated_at = archivedAt;
+    row.is_default = false;
+    return toRow(row);
+  }
+
   async setDefault(
     tenantId: string,
     cardId: string,

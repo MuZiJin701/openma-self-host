@@ -59,6 +59,8 @@ export class EnvironmentService {
 
   async create(opts: {
     tenantId: string;
+    /** Optional stable ID for deployments that expose a fixed environment. */
+    id?: string;
     name: string;
     description?: string | null;
     config: EnvironmentConfig["config"];
@@ -70,7 +72,7 @@ export class EnvironmentService {
     imageHandle?: Record<string, unknown> | null;
   }): Promise<EnvironmentRow> {
     const input: NewEnvironmentInput = {
-      id: this.ids.environmentId(),
+      id: opts.id ?? this.ids.environmentId(),
       tenantId: opts.tenantId,
       name: opts.name,
       description: opts.description ?? null,

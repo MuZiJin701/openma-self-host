@@ -15,15 +15,12 @@ import {
 import { ROUTE_CHORDS } from "../lib/route-chords";
 import {
   AgentIcon,
-  ApiKeysIcon,
   DashboardIcon,
   EnvIcon,
   FilesIcon,
-  MemoryIcon,
   ModelCardsIcon,
   SessionsIcon,
   SkillsIcon,
-  VaultIcon,
 } from "./icons";
 
 interface NavCommand {
@@ -44,13 +41,9 @@ const COMMANDS: NavCommand[] = [
   { label: "Agents",             to: "/agents",                    group: "Managed Agents", icon: AgentIcon },
   { label: "Sessions",           to: "/sessions",                  group: "Managed Agents", icon: SessionsIcon },
   { label: "Files",              to: "/files",                     group: "Managed Agents", icon: FilesIcon },
-  { label: "Eval Runs",          to: "/evals",                     group: "Managed Agents", icon: SessionsIcon, aliases: "evaluations evals" },
   { label: "Environments",       to: "/environments",              group: "Infrastructure", icon: EnvIcon, aliases: "envs sandboxes" },
-  { label: "Credential Vaults",  to: "/vaults",                    group: "Infrastructure", icon: VaultIcon, aliases: "secrets credentials" },
   { label: "Skills",             to: "/skills",                    group: "Configuration",  icon: SkillsIcon },
-  { label: "Memory Stores",      to: "/memory",                    group: "Configuration",  icon: MemoryIcon },
   { label: "Model Cards",        to: "/model-cards",               group: "Configuration",  icon: ModelCardsIcon },
-  { label: "API Keys",           to: "/api-keys",                  group: "Configuration",  icon: ApiKeysIcon, aliases: "tokens" },
 ];
 
 /**

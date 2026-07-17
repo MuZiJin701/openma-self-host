@@ -1,6 +1,4 @@
-// SandboxOrchestrator — single entry point both runtimes use to provision
-// a session sandbox + its environment (vault outbound, memory mounts,
-// session outputs mount, optional workspace backup/restore).
+// SandboxOrchestrator — the small provisioning boundary for local sessions.
 //
 // Replaces the per-runtime plumbing that used to live separately in
 //   - apps/agent/src/oma-sandbox.ts (CF setOutboundContext / setBackupContext / snapshot)
@@ -18,12 +16,6 @@
 
 import type { SandboxExecutor } from "./ports";
 
-export interface OrchestratorMemoryMount {
-  storeName: string;
-  storeId: string;
-  readOnly: boolean;
-}
-
 export interface OrchestratorBackupHandle {
   /** Backup id — opaque to callers; format depends on provider. */
   id: string;
@@ -33,12 +25,8 @@ export interface OrchestratorBackupHandle {
 }
 
 export interface SandboxCapabilities {
-  /** Can mountMemoryStore({readOnly:true}) actually enforce read-only at OS level? */
-  enforceReadOnlyMemory: boolean;
   /** Can mountSessionOutputs surface writes back through the host? */
   hasSessionOutputs: boolean;
-  /** Can vault outbound (HTTPS_PROXY + CA) be installed? */
-  hasVaultOutbound: boolean;
   /** Can the workspace be backed up + restored across sandbox lifetimes? */
   hasWorkspaceBackup: boolean;
 }
@@ -48,8 +36,6 @@ export interface ProvisionInput {
   tenantId: string;
   /** Optional environment id — only meaningful for CF backups (per-env scope). */
   environmentId?: string;
-  /** Memory stores to bind into the sandbox at /mnt/memory/<storeName>/. */
-  memoryMounts?: OrchestratorMemoryMount[];
   /** Mount /mnt/session/outputs/ scoped to (tenantId, sessionId). */
   mountOutputs?: boolean;
   /** Backup config — restore from latest, or skip when undefined. */
@@ -66,7 +52,7 @@ export interface SandboxOrchestrator {
    *  session creation when policy requires a feature. */
   capabilities(sandbox: SandboxExecutor): SandboxCapabilities;
 
-  /** Wire vault outbound + memory + outputs + backup-restore on a fresh
+  /** Wire outputs + backup-restore on a fresh
    *  sandbox. Called once per session, before the first user.message
    *  reaches the harness. Throws on hard mount failures (e.g. the tenant
    *  required readOnly memory but the provider can't enforce). */
@@ -136,9 +122,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
     // self-host.md the per-provider matrix). Default to "best effort"
     // so the orchestrator doesn't block normal flows.
     return {
-      enforceReadOnlyMemory: typeof sandbox.mountMemoryStore === "function",
       hasSessionOutputs: typeof sandbox.mountSessionOutputs === "function",
-      hasVaultOutbound: typeof sandbox.setOutboundContext === "function",
       hasWorkspaceBackup:
         this.deps.backups !== null &&
         this.deps.backups !== undefined &&
@@ -148,23 +132,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
   }
 
   async provision(sandbox: SandboxExecutor, input: ProvisionInput): Promise<void> {
-    // 1. Vault outbound — set HTTPS_PROXY + upload CA before any exec.
-    //    Provider's setOutboundContext is responsible for the no-op when
-    //    the OMA_VAULT_* env vars are unset.
-    if (sandbox.setOutboundContext) {
-      try {
-        await sandbox.setOutboundContext({
-          tenantId: input.tenantId,
-          sessionId: input.sessionId,
-        });
-      } catch (err) {
-        this.deps.logger?.warn(
-          `[sandbox-orchestrator] setOutboundContext failed: ${(err as Error).message} — outbound TLS through oma-vault may not work`,
-        );
-      }
-    }
-
-    // 2. Backup context (CF only) + best-effort restore.
+    // Backup context (when supported) + best-effort restore.
     if (input.environmentId && sandbox.setBackupContext) {
       await sandbox.setBackupContext({
         tenantId: input.tenantId,
@@ -194,26 +162,7 @@ export class DefaultSandboxOrchestrator implements SandboxOrchestrator {
       }
     }
 
-    // 3. Mount memory stores.
-    if (input.memoryMounts?.length && sandbox.mountMemoryStore) {
-      for (const m of input.memoryMounts) {
-        try {
-          await sandbox.mountMemoryStore({
-            storeName: m.storeName,
-            storeId: m.storeId,
-            readOnly: m.readOnly,
-          });
-        } catch (err) {
-          // Mount-store errors are user-visible; surface them rather
-          // than silently degrading.
-          throw new Error(
-            `mountMemoryStore ${m.storeName} failed: ${(err as Error).message}`,
-          );
-        }
-      }
-    }
-
-    // 4. Mount session outputs.
+    // Mount session outputs.
     if (input.mountOutputs && sandbox.mountSessionOutputs) {
       try {
         await sandbox.mountSessionOutputs({

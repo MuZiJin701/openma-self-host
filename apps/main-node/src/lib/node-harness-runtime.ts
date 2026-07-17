@@ -88,12 +88,18 @@ export class NodeHarnessRuntime implements HarnessRuntime {
   constructor(private opts: NodeHarnessRuntimeOptions) {
     this.history = new SqlHistoryStore(opts.log);
     this.sandbox = opts.sandbox;
+    this.pendingConfirmations = [];
     this.abortSignal = opts.abortSignal;
   }
 
   /** Call before each harness.run() so getEvents reflects DB state. */
   async refreshHistory(): Promise<void> {
     await this.history.refresh();
+  }
+
+  /** Wait until every broadcast issued by the harness is durable. */
+  async flush(): Promise<void> {
+    await this.writeChain;
   }
 
   /**

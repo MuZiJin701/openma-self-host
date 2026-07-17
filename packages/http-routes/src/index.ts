@@ -16,39 +16,12 @@ export { resolveServices } from "./types";
 export { buildAgentRoutes } from "./agents";
 export type { AgentRoutesDeps } from "./agents";
 
-export { buildVaultRoutes } from "./vaults";
-export type { VaultRoutesDeps } from "./vaults";
-
 export { buildSessionRoutes } from "./sessions";
 export type {
   SessionRoutesDeps,
   SessionLifecycleHooks,
   OutputsAdapter,
 } from "./sessions";
-
-export { buildMemoryRoutes } from "./memory";
-export type { MemoryRoutesDeps } from "./memory";
-
-export { buildDreamRoutes } from "./dreams";
-export type { DreamRoutesDeps } from "./dreams";
-
-export { buildTenantRoutes, buildMeRoutes } from "./tenants";
-export type { TenantRoutesDeps, MeRoutesDeps } from "./tenants";
-
-export {
-  buildApiKeyRoutes,
-  mintApiKeyOnStorage,
-  sha256Hex,
-} from "./api-keys";
-export type {
-  ApiKeyRoutesDeps,
-  ApiKeyStorage,
-  ApiKeyRecord,
-  ApiKeyMeta,
-} from "./api-keys";
-
-export { buildEvalRoutes } from "./evals";
-export type { EvalRoutesDeps, EvalTaskSpec } from "./evals";
 
 export { buildModelCardRoutes } from "./model-cards";
 export { buildEnvironmentRoutes } from "./environments";

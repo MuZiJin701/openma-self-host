@@ -98,9 +98,8 @@ export class NodeWorkspaceBackupService implements WorkspaceBackupService {
       )
       .bind(
         input.tenantId,
-        // environment_id: Node sessions today are single-env; the backup
-        // is logically scoped by session, so use the session id as a
-        // synthetic env id when the caller doesn't supply one.
+        // The backup is logically scoped by session, so use the session id as
+        // a synthetic environment key for this legacy backup table column.
         input.sessionId,
         handleJson,
         now,

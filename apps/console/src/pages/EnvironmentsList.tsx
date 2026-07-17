@@ -11,6 +11,7 @@ import { DataTable, type ColumnDef } from "../components/DataTable";
 import { FacetedFilter } from "../components/FacetedFilter";
 import { FilterChip, CreatedFilterChip } from "../components/FilterChip";
 import { RowActionsMenu } from "../components/RowActionsMenu";
+import { buildEnvironmentCreateBody } from "./environment-api";
 
 interface Env {
   id: string;
@@ -68,7 +69,7 @@ export function EnvironmentsList() {
   const create = async () => {
     await api("/v1/environments", {
       method: "POST",
-      body: JSON.stringify({ name: form.name, config: { type: "cloud" }, description: form.description || undefined }),
+      body: JSON.stringify(buildEnvironmentCreateBody(form.name, form.description)),
     });
     setShowCreate(false); setForm({ name: "", description: "" }); load();
   };
@@ -98,11 +99,11 @@ export function EnvironmentsList() {
       },
       {
         id: "type",
-        accessorFn: (e) => (e.config?.type as string) || "cloud",
+        accessorFn: (e) => (e.config?.type as string) || "local",
         header: "Type",
         cell: ({ row }) => (
           <span className="text-fg-muted">
-            {(row.original.config?.type as string) || "cloud"}
+            {(row.original.config?.type as string) || "local"}
           </span>
         ),
       },
@@ -242,7 +243,7 @@ export function EnvironmentsList() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         title="Add Environment"
-        subtitle="Environments provide isolated sandboxes for code execution."
+        subtitle="Self-host uses the local runtime environment for code execution."
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
@@ -264,10 +265,10 @@ export function EnvironmentsList() {
           </div>
           <div>
             <span className="text-sm text-fg-muted block mb-1">Hosting Type</span>
-            <Select value="cloud" onValueChange={() => {}} disabled>
-              <SelectOption value="cloud">Cloud</SelectOption>
+            <Select value="local" onValueChange={() => {}} disabled>
+              <SelectOption value="local">Local runtime</SelectOption>
             </Select>
-            <p className="text-xs text-fg-subtle mt-1">This cannot be changed after creation.</p>
+            <p className="text-xs text-fg-subtle mt-1">Self-host currently supports this environment only.</p>
           </div>
           <div>
             <label htmlFor="env-create-description" className="text-sm text-fg-muted block mb-1">Description <span className="text-fg-subtle">(optional)</span></label>

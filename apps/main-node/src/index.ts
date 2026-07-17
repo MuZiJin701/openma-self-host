@@ -1,10 +1,8 @@
 /**
  * apps/main-node — self-host Node entry for the Open Managed Agents API.
  *
- * Wiring file. ~280 lines: build services → mount route bundles from
- * @open-managed-agents/http-routes → start server. All route bodies live
- * in packages/http-routes; storage adapters in their respective packages
- * (agents-store, vaults-store, memory-store, etc.).
+ * Wiring file: build the core services, mount the Anthropic-compatible routes,
+ * and start the local trusted subprocess runtime.
  */
 
 import { serve } from "@hono/node-server";
@@ -34,22 +32,15 @@ import {
 } from "@open-managed-agents/sql-client";
 import { createSqliteAgentService } from "@open-managed-agents/agents-store";
 import {
-  createSqliteMemoryStoreService,
-  SqlMemoryRepo,
-} from "@open-managed-agents/memory-store";
-import { createSqliteDreamService } from "@open-managed-agents/dreams-store";
-import { LocalFsBlobStore as MemoryLocalFsBlobStore } from "@open-managed-agents/memory-store/adapters/local-fs-blob";
-import {
-  S3BlobStore as FilesS3BlobStore,
   type BlobStore,
 } from "@open-managed-agents/blob-store";
 import { LocalFsBlobStore as FilesLocalFsBlobStore } from "@open-managed-agents/blob-store/adapters/local-fs";
-import { createSqliteVaultService } from "@open-managed-agents/vaults-store";
-import { createSqliteCredentialService } from "@open-managed-agents/credentials-store";
 import { createSqliteSessionService } from "@open-managed-agents/sessions-store";
 import { createSqliteFileService } from "@open-managed-agents/files-store";
-import { createSqliteEvalRunService } from "@open-managed-agents/evals-store";
-import { createSqliteEnvironmentService } from "@open-managed-agents/environments-store";
+import {
+  createSqliteEnvironmentService,
+  toEnvironmentConfig,
+} from "@open-managed-agents/environments-store";
 import { createSqliteModelCardService } from "@open-managed-agents/model-cards-store";
 import { SqlSkillService } from "@open-managed-agents/skills-store";
 import { SELF_HOST_SKILLS_SCHEMA_SQL } from "@open-managed-agents/db-schema/node-sqlite";
@@ -61,34 +52,21 @@ import { DefaultHarness } from "@open-managed-agents/agent/harness/default-loop"
 import { buildTools } from "@open-managed-agents/agent/harness/tools";
 import { composeSystemPrompt } from "@open-managed-agents/agent/harness/platform-guidance";
 import type { HarnessContext } from "@open-managed-agents/agent/harness/interface";
-import { nodeToMarkdown } from "@open-managed-agents/markdown/adapters/node";
 import { applyBetterAuthSchema } from "@open-managed-agents/schema";
 import { ensureSchema as ensureEventLogSchema } from "@open-managed-agents/event-log/sql";
 import {
   buildAgentRoutes,
-  buildVaultRoutes,
   buildSessionRoutes,
-  buildMemoryRoutes,
-  buildDreamRoutes,
-  buildTenantRoutes,
-  buildMeRoutes,
-  buildApiKeyRoutes,
-  buildEvalRoutes,
   buildModelCardRoutes,
   buildEnvironmentRoutes,
   buildSkillRoutes,
   type RouteServices,
-  type ApiKeyStorage,
-  type ApiKeyMeta,
-  type ApiKeyRecord,
-  mintApiKeyOnStorage,
-  sha256Hex,
 } from "@open-managed-agents/http-routes";
 import { WebCryptoAesGcm } from "./lib/web-crypto-aes-gcm.js";
-import { OmaVaultResolver } from "@open-managed-agents/oma-cap-adapter";
 import { NodeSessionRouter } from "./lib/node-session-router.js";
 import { nodeOutputsAdapter } from "./lib/node-outputs-adapter.js";
 import { nodeSessionLifecycle } from "./lib/node-session-lifecycle.js";
+import { buildNodeFileRoutes } from "./lib/node-file-routes.js";
 import { NodeWorkspaceBackupService } from "./lib/node-workspace-backup.js";
 import { DefaultSandboxOrchestrator } from "@open-managed-agents/sandbox/orchestrator";
 import { createAuthMiddleware as buildAuthMw } from "@open-managed-agents/auth";
@@ -96,17 +74,9 @@ import {
   buildBetterAuth,
   ensureTenantSqlite,
 } from "@open-managed-agents/auth-config";
-import { senderFromEnv } from "@open-managed-agents/email/adapters/nodemailer";
 import { SqlKvStore } from "@open-managed-agents/kv-store/adapters/sql";
-import {
-  selectBrowserHarness,
-  buildSelectedBrowserHarness,
-} from "@open-managed-agents/browser-harness/select";
-import type { BrowserHarness } from "@open-managed-agents/browser-harness";
-import { startMemoryBlobWatcher } from "./lib/memory-blob-watcher.js";
-import { buildNodeScheduler } from "./lib/node-scheduler-jobs.js";
-import { startNodeMemoryQueue } from "./lib/node-memory-queue.js";
 import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nanoid } from "nanoid";
@@ -119,8 +89,6 @@ import { NodeHarnessRuntime } from "./lib/node-harness-runtime";
 import { SessionRegistry } from "./registry.js";
 import { NodeModelResolver } from "./lib/node-model-resolver.js";
 import { WorkerPool } from "./lib/worker-pool.js";
-
-const toMarkdownProvider = nodeToMarkdown();
 
 // ─── Observability bootstrap ─────────────────────────────────────────────
 //
@@ -209,7 +177,6 @@ const platformRootSecret = process.env.PLATFORM_ROOT_SECRET;
 
 const authDisabled = process.env.AUTH_DISABLED === "1";
 const authDbPath = process.env.AUTH_DATABASE_PATH ?? "./data/auth.db";
-const sender = senderFromEnv(process.env);
 
 let auth: ReturnType<typeof buildBetterAuth> | null = null;
 let authShutdown: (() => Promise<void>) | null = null;
@@ -221,12 +188,8 @@ if (!authDisabled) {
     await applyBetterAuthSchema({ sql, dialect: "postgres" });
     auth = buildBetterAuth({
       database: pgPool,
-      sender,
       secret: process.env.BETTER_AUTH_SECRET ?? randomFallback(),
       baseURL: process.env.PUBLIC_BASE_URL,
-      googleClientId: process.env.GOOGLE_CLIENT_ID,
-      googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      requireEmailVerify: process.env.AUTH_REQUIRE_EMAIL_VERIFY === "1",
       cookieDomain: process.env.AUTH_COOKIE_DOMAIN,
       ensureTenant: (u) => ensureTenantSqlite(sql, u.id, u.name, u.email),
     });
@@ -245,12 +208,8 @@ if (!authDisabled) {
     });
     auth = buildBetterAuth({
       database: authDb,
-      sender,
       secret: process.env.BETTER_AUTH_SECRET ?? randomFallback(),
       baseURL: process.env.PUBLIC_BASE_URL,
-      googleClientId: process.env.GOOGLE_CLIENT_ID,
-      googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      requireEmailVerify: process.env.AUTH_REQUIRE_EMAIL_VERIFY === "1",
       cookieDomain: process.env.AUTH_COOKIE_DOMAIN,
       ensureTenant: (u) => ensureTenantSqlite(sql, u.id, u.name, u.email),
     });
@@ -263,11 +222,8 @@ if (!authDisabled) {
 // ─── Stores ─────────────────────────────────────────────────────────────
 
 const agentsService = createSqliteAgentService({ db: drizzleDb });
-const vaultService = createSqliteVaultService({ db: drizzleDb });
-const credentialService = createSqliteCredentialService({ db: drizzleDb });
 const sessionsService = createSqliteSessionService({ db: drizzleDb });
 const filesService = createSqliteFileService({ db: drizzleDb });
-const evalsService = createSqliteEvalRunService({ db: drizzleDb });
 const environmentsService = createSqliteEnvironmentService({ db: drizzleDb });
 const modelCardsService = createSqliteModelCardService(
   { db: drizzleDb },
@@ -293,136 +249,15 @@ const workerPool = new WorkerPool({
   },
 });
 
-let memoryBlobs: import("@open-managed-agents/memory-store").BlobStore;
-let memoryBlobDescription: string;
-let memoryBlobLocalDir: string | null = null;
-let s3MemoryConfig: {
-  endpoint: string;
-  bucket: string;
-  accessKey: string;
-  secretKey: string;
-  region: string;
-} | null = null;
-
-if (
-  process.env.MEMORY_S3_ENDPOINT &&
-  process.env.MEMORY_S3_BUCKET &&
-  process.env.MEMORY_S3_ACCESS_KEY &&
-  process.env.MEMORY_S3_SECRET_KEY
-) {
-  const { S3BlobStore } = await import(
-    "@open-managed-agents/memory-store/adapters/s3-blob"
-  );
-  s3MemoryConfig = {
-    endpoint: process.env.MEMORY_S3_ENDPOINT,
-    bucket: process.env.MEMORY_S3_BUCKET,
-    accessKey: process.env.MEMORY_S3_ACCESS_KEY,
-    secretKey: process.env.MEMORY_S3_SECRET_KEY,
-    region: process.env.MEMORY_S3_REGION ?? "us-east-1",
-  };
-  memoryBlobs = new S3BlobStore({
-    endpoint: s3MemoryConfig.endpoint,
-    bucket: s3MemoryConfig.bucket,
-    accessKeyId: s3MemoryConfig.accessKey,
-    secretAccessKey: s3MemoryConfig.secretKey,
-    region: s3MemoryConfig.region,
-  });
-  memoryBlobDescription = `s3 ${s3MemoryConfig.endpoint}/${s3MemoryConfig.bucket}`;
-} else {
-  memoryBlobLocalDir = process.env.MEMORY_BLOB_DIR ?? "./data/memory-blobs";
-  memoryBlobs = new MemoryLocalFsBlobStore({ baseDir: memoryBlobLocalDir });
-  memoryBlobDescription = `localfs ${memoryBlobLocalDir}`;
-}
-
-const memoryService = createSqliteMemoryStoreService({
-  db: drizzleDb,
-  blobs: memoryBlobs,
-});
-const dreamsService = createSqliteDreamService({
-  client: sql,
-  verifyMemoryStoreExists: async (tenantId, storeId) => {
-    const row = await sql
-      .prepare("SELECT 1 FROM memory_stores WHERE id = ? AND tenant_id = ?")
-      .bind(storeId, tenantId)
-      .first();
-    return !!row;
-  },
-  verifySessionExists: async (tenantId, sessionId) => {
-    const row = await sql
-      .prepare("SELECT 1 FROM sessions WHERE id = ? AND tenant_id = ?")
-      .bind(sessionId, tenantId)
-      .first();
-    return !!row;
-  },
-});
-const memoryRepo = new SqlMemoryRepo(drizzleDb);
-// Memory blob watcher — wires chokidar fs events through
-// packages/queue's processMemoryEvent so CF + Node share one upsert
-// code path. PG mode uses the multi-replica-safe PG queue table; SQLite
-// single-instance uses an in-memory queue. Set MEMORY_QUEUE=disabled to
-// skip wiring and fall back to the legacy direct-call watcher.
-const useQueue = (process.env.MEMORY_QUEUE ?? "auto") !== "disabled";
-const memoryWatcher = memoryBlobLocalDir && useQueue
-  ? await startNodeMemoryQueue({
-      mode: usePostgres ? "pg" : "in-memory",
-      sql: usePostgres ? sql : undefined,
-      memoryRepo,
-      memoryBlobs,
-      memoryRoot: memoryBlobLocalDir,
-    })
-  : memoryBlobLocalDir
-    ? startMemoryBlobWatcher({ memoryRoot: memoryBlobLocalDir, memoryRepo })
-    : { stop: async () => {} };
-
-let s3Poller: { stop: () => Promise<void> } | null = null;
-if (s3MemoryConfig) {
-  // memory_blob_poller_lease lives in the consolidated baseline already; no
-  // separate schema bootstrap needed here.
-  const replicaId = `replica_${process.pid}_${Math.floor(Math.random() * 1e9).toString(36)}`;
-  const intervalSec = Number(process.env.MEMORY_S3_POLL_INTERVAL_SEC ?? 30);
-  const { startS3MemoryPoller } = await import("./lib/s3-memory-poller.js");
-  s3Poller = await startS3MemoryPoller({
-    sql,
-    sqlDialect: dialect,
-    memoryRepo,
-    replicaId,
-    intervalMs: Math.max(5_000, intervalSec * 1000),
-    s3: s3MemoryConfig,
-  });
-}
-
 const outputsRoot = process.env.SESSION_OUTPUTS_DIR ?? "./data/session-outputs";
 mkdirSync(outputsRoot, { recursive: true });
 
 // ─── Files-store blob backend ────────────────────────────────────────
 //
-// Keyed off FILES_S3_* env vars; falls back to a local-FS adapter under
-// FILES_BLOB_DIR (default ./data/files-blobs). The blob store backs both
-// the files-store table content AND workspace_backups tar archives —
-// same single store, two key prefixes.
-
-let filesBlob: BlobStore;
-let filesBlobDescription: string;
-if (
-  process.env.FILES_S3_ENDPOINT &&
-  process.env.FILES_S3_BUCKET &&
-  process.env.FILES_S3_ACCESS_KEY &&
-  process.env.FILES_S3_SECRET_KEY
-) {
-  filesBlob = new FilesS3BlobStore({
-    endpoint: process.env.FILES_S3_ENDPOINT,
-    bucket: process.env.FILES_S3_BUCKET,
-    accessKeyId: process.env.FILES_S3_ACCESS_KEY,
-    secretAccessKey: process.env.FILES_S3_SECRET_KEY,
-    region: process.env.FILES_S3_REGION ?? "us-east-1",
-  });
-  filesBlobDescription = `s3 ${process.env.FILES_S3_ENDPOINT}/${process.env.FILES_S3_BUCKET}`;
-} else {
-  const filesBlobDir = process.env.FILES_BLOB_DIR ?? "./data/files-blobs";
-  mkdirSync(filesBlobDir, { recursive: true });
-  filesBlob = new FilesLocalFsBlobStore({ baseDir: filesBlobDir });
-  filesBlobDescription = `localfs ${filesBlobDir}`;
-}
+// Files and workspace backups use one local filesystem blob store.
+const filesBlobDir = process.env.FILES_BLOB_DIR ?? "./data/files-blobs";
+mkdirSync(filesBlobDir, { recursive: true });
+const filesBlob: BlobStore = new FilesLocalFsBlobStore({ baseDir: filesBlobDir });
 
 const skillsService = new SqlSkillService(sql, filesBlob);
 
@@ -457,35 +292,21 @@ if (usePostgres) {
 
 // ─── Sandbox factory ────────────────────────────────────────────────────
 
-const SANDBOX_PROVIDER_PATHS: Record<string, string> = {
-  subprocess: "@open-managed-agents/sandbox/adapters/local-subprocess",
-  litebox: "@open-managed-agents/sandbox/adapters/litebox",
-  boxlite: "@open-managed-agents/sandbox/adapters/litebox",
-  boxrun: "@open-managed-agents/sandbox/adapters/boxrun",
-  daytona: "@open-managed-agents/sandbox/adapters/daytona",
-  e2b: "@open-managed-agents/sandbox/adapters/e2b",
-};
+import { sandboxFactory } from "@open-managed-agents/sandbox/adapters/local-subprocess";
 
 async function buildSandbox(
   sessionId: string,
   workdir: string,
 ): Promise<import("@open-managed-agents/sandbox").SandboxExecutor> {
   const provider = (process.env.SANDBOX_PROVIDER ?? "subprocess").toLowerCase();
-  const path = SANDBOX_PROVIDER_PATHS[provider];
-  if (!path) {
-    throw new Error(
-      `SANDBOX_PROVIDER=${provider} not recognized; valid: ${Object.keys(SANDBOX_PROVIDER_PATHS).join(", ")}`,
-    );
+  if (provider !== "subprocess") {
+    throw new Error("sandbox_provider_not_supported: only subprocess is available");
   }
-  const mod = (await import(path)) as {
-    sandboxFactory: import("@open-managed-agents/sandbox").SandboxFactory;
-  };
-  return mod.sandboxFactory(
+  return sandboxFactory(
     {
       sessionId,
       workdir,
       sharedWorkspace: true,
-      memoryRoot: memoryBlobLocalDir ?? "",
       outputsRoot,
     },
     process.env,
@@ -499,7 +320,6 @@ const sessionRegistry = new SessionRegistry({
   hub,
   agentsService,
   skillsService,
-  memoryService,
   sandboxOrchestrator,
   newEventLog,
   buildSandbox,
@@ -511,13 +331,10 @@ const sessionRegistry = new SessionRegistry({
     if (!tenantId) throw new Error("tenantId required for model resolution");
     return modelResolver.resolve({ tenantId, agent }).then((result) => result.model);
   },
-  buildTools: async (agent, sandbox, tenantId) => {
+  buildTools: async (agent, sandbox, tenantId, options) => {
     if (!tenantId) throw new Error("tenantId required for model resolution");
-    const credentials = await modelResolver.resolveCredentials({ tenantId, agent });
     return buildTools(agent, sandbox, {
-      ANTHROPIC_API_KEY: credentials.apiKey,
-      ANTHROPIC_BASE_URL: credentials.baseUrl,
-      toMarkdown: toMarkdownProvider,
+      allowAlwaysAsk: options?.allowAlwaysAsk,
     });
   },
   buildHarness: () => {
@@ -567,11 +384,7 @@ const kv = kvForTenant("default");
 const services: RouteServices = {
   sql,
   agents: agentsService,
-  vaults: vaultService,
-  credentials: credentialService,
-  memory: memoryService,
   sessions: sessionsService,
-  dreams: dreamsService,
   kv,
   kvForTenant,
   newEventLog,
@@ -615,43 +428,11 @@ const services: RouteServices = {
   tracer,
 };
 
-// ─── API key storage (SQL) ──────────────────────────────────────────────
-
-const apiKeyStorage: ApiKeyStorage = {
-  async insert({ id, hash, prefix, record }) {
-    await sql
-      .prepare(
-        `INSERT INTO api_keys (id, tenant_id, user_id, name, prefix, hash, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        id,
-        record.tenant_id,
-        record.user_id ?? null,
-        record.name,
-        prefix,
-        hash,
-        Date.parse(record.created_at),
-      )
-      .run();
-  },
-  async listByTenant(tenantId) {
-    const r = await sql
-      .prepare(
-        `SELECT id, name, prefix, created_at FROM api_keys
-          WHERE tenant_id = ? AND revoked_at IS NULL
-          ORDER BY created_at DESC`,
-      )
-      .bind(tenantId)
-      .all<{ id: string; name: string; prefix: string; created_at: number }>();
-    return (r.results ?? []).map<ApiKeyMeta>((row) => ({
-      id: row.id,
-      name: row.name,
-      prefix: row.prefix,
-      created_at: new Date(row.created_at).toISOString(),
-    }));
-  },
-  async findByHash(hash) {
+// ─── Existing API-key resolution ───────────────────────────────────────
+// API-key management is intentionally not exposed by the slim self-host
+// surface, but already-issued keys remain valid for SDK/CLI clients.
+const apiKeyStorage = {
+  async findByHash(hash: string) {
     const row = await sql
       .prepare(
         `SELECT id, tenant_id, user_id, name, created_at FROM api_keys
@@ -666,7 +447,7 @@ const apiKeyStorage: ApiKeyStorage = {
         created_at: number;
       }>();
     if (!row) return null;
-    const rec: ApiKeyRecord = {
+    const rec = {
       id: row.id,
       tenant_id: row.tenant_id,
       ...(row.user_id ? { user_id: row.user_id } : {}),
@@ -674,15 +455,6 @@ const apiKeyStorage: ApiKeyStorage = {
       created_at: new Date(row.created_at).toISOString(),
     };
     return rec;
-  },
-  async deleteById(tenantId, id) {
-    const r = await sql
-      .prepare(
-        `UPDATE api_keys SET revoked_at = ? WHERE tenant_id = ? AND id = ? AND revoked_at IS NULL`,
-      )
-      .bind(Date.now(), tenantId, id)
-      .run();
-    return (r.meta?.changes ?? 0) > 0;
   },
 };
 
@@ -728,7 +500,7 @@ app.get("/health", (c) =>
       agents: dialect,
       events: dialect,
       hub: usePostgres ? "pg-notify" : "in-process",
-      memory_blobs: memoryBlobDescription,
+      files_blobs: `localfs ${filesBlobDir}`,
       db: backendDescription,
     },
   }),
@@ -736,15 +508,7 @@ app.get("/health", (c) =>
 
 app.get("/auth-info", (c) =>
   c.json({
-    providers: authDisabled
-      ? []
-      : [
-          "email",
-          ...(process.env.AUTH_REQUIRE_EMAIL_VERIFY === "1" ? ["email-otp"] : []),
-          ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-            ? ["google"]
-            : []),
-        ],
+    providers: authDisabled ? [] : ["email"],
     turnstile_site_key: null,
   }),
 );
@@ -771,7 +535,7 @@ const authMw = buildAuthMw({
     };
   },
   resolveApiKey: async (apiKey) => {
-    const hash = await sha256Hex(apiKey);
+    const hash = sha256Hex(apiKey);
     const rec = await apiKeyStorage.findByHash(hash);
     if (!rec) return null;
     return { tenantId: rec.tenant_id, userId: rec.user_id };
@@ -801,6 +565,36 @@ const v1 = new Hono<{
   Variables: { tenant_id: string; user_id?: string };
 }>();
 v1.use("*", authMw);
+
+v1.get("/me/tenants", async (c) => {
+  const userId = c.var.user_id;
+  if (!userId) {
+    const row = await sql.prepare(`SELECT id, name FROM "tenant" WHERE id = ?`)
+      .bind(c.var.tenant_id).first<{ id: string; name: string }>();
+    return c.json({ data: row ? [{ ...row, role: "owner" }] : [] });
+  }
+  const result = await sql.prepare(
+    `SELECT t.id, t.name, m.role, m.created_at
+       FROM "membership" m JOIN "tenant" t ON t.id = m.tenant_id
+      WHERE m.user_id = ? ORDER BY m.created_at ASC, t.id ASC`,
+  ).bind(userId).all<{ id: string; name: string; role: string; created_at: number }>();
+  return c.json({ data: result.results ?? [] });
+});
+
+v1.post("/tenants", async (c) => {
+  const userId = c.var.user_id;
+  if (!userId) return c.json({ error: "authentication_required" }, 401);
+  const body = await c.req.json<{ name?: string }>();
+  const name = body.name?.trim();
+  if (!name) return c.json({ error: "name is required" }, 400);
+  const tenantId = `tenant_${nanoid(16)}`;
+  const now = Date.now();
+  await sql.prepare(`INSERT INTO "tenant" (id, name, created_at) VALUES (?, ?, ?)`)
+    .bind(tenantId, name, now).run();
+  await sql.prepare(`INSERT INTO membership (tenant_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`)
+    .bind(tenantId, userId, "owner", now).run();
+  return c.json({ id: tenantId, name, role: "owner", created_at: now }, 201);
+});
 
 // Mount route bundles. Same paths CF uses; behavior preserved.
 v1.route("/agents", buildAgentRoutes({
@@ -846,69 +640,23 @@ v1.route("/sessions", buildSessionRoutes({
   router: sessionRouter,
   outputs: nodeOutputsAdapter(outputsRoot),
   lifecycle: nodeSessionLifecycle({ files: filesService, filesBlob }),
-  // Node has no per-tenant cloud environments yet — every agent is treated
-  // as a local runtime. The package's loadEnvironment hook returns a
-  // synthetic snapshot so session create doesn't 404 on missing env_id.
+  // Node has no cloud runtime yet — every agent is treated as local. Resolve
+  // the selected Environment inside the authenticated tenant; the stable
+  // sentinel remains a backwards-compatible fallback when no row is selected.
   localRuntimeEnvId: "env-local-runtime",
   forceLocalRuntime: true,
-  loadEnvironment: async ({ environmentId }) => {
+  loadEnvironment: async ({ tenantId, environmentId }) => {
+    const row = await environmentsService.get({ tenantId, environmentId });
+    if (row?.archived_at) return null;
+    if (row) return toEnvironmentConfig(row);
     if (environmentId !== "env-local-runtime") return null;
     return {
+      type: "environment",
       id: environmentId,
-      runtime: "local",
-      sandbox_template: null,
-    } as unknown as import("@open-managed-agents/shared").EnvironmentConfig;
+      name: "Local runtime",
+      config: { type: "local" },
+    } as import("@open-managed-agents/shared").EnvironmentConfig;
   },
-}));
-v1.route("/vaults", buildVaultRoutes({ services }));
-v1.route("/memory_stores", buildMemoryRoutes({ services }));
-v1.route("/dreams", buildDreamRoutes({
-  services,
-  curatorEnv: {
-    DREAM_CURATOR_MODE: process.env.DREAM_CURATOR_MODE,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
-  },
-}));
-v1.route("/me", buildMeRoutes({
-  services,
-  authDisabled,
-  loadTenant: async (tenantId) => {
-    const r = await sql
-      .prepare(`SELECT id, name FROM "tenant" WHERE id = ?`)
-      .bind(tenantId)
-      .first<{ id: string; name: string }>();
-    return r ?? null;
-  },
-  listMemberships: async (userId) => {
-    const r = await sql
-      .prepare(
-        `SELECT t.id AS id, t.name AS name, m.role AS role, m.created_at AS created_at
-           FROM "membership" m JOIN "tenant" t ON t.id = m.tenant_id
-          WHERE m.user_id = ? ORDER BY m.created_at ASC, t.id ASC`,
-      )
-      .bind(userId)
-      .all<{ id: string; name: string; role: string; created_at: number }>();
-    return r.results ?? [];
-  },
-  hasMembership: async (userId, tenantId) => {
-    const row = await sql
-      .prepare(
-        `SELECT 1 AS one FROM membership WHERE user_id = ? AND tenant_id = ? LIMIT 1`,
-      )
-      .bind(userId, tenantId)
-      .first<{ one: number }>();
-    return row !== null;
-  },
-  mintApiKey: (input) => mintApiKeyOnStorage(apiKeyStorage, input),
-}));
-v1.route("/tenants", buildTenantRoutes({ services }));
-v1.route("/api_keys", buildApiKeyRoutes({ storage: apiKeyStorage }));
-v1.route("/evals", buildEvalRoutes({
-  evals: evalsService,
-  agents: agentsService,
-  // Node has no per-tenant cloud environments yet — leave the optional
-  // dep undefined so the route accepts any environment_id without 404ing.
 }));
 
 v1.get("/models/list", (c) =>
@@ -922,12 +670,16 @@ v1.get("/models/list", (c) =>
 );
 // ── Files API (subset of apps/main/src/routes/files.ts) ──
 //
-// CF mounts a richer files surface with synthesized session-output ids
-// and multipart upload; Node ships the read-side equivalent so the SDK
-// + console can list, download, and delete files. Uploads still go via
-// POST /v1/sessions/:id/files (lifecycle.promoteSandboxFile) and the
-// CF-only POST /v1/files (multipart upload from the browser) — that
-// route can be ported when console upload UX needs it.
+// CF mounts a richer files surface with synthesized session-output ids;
+// Node provides tenant-scoped multipart upload plus list, download, and
+// delete for the SDK and Console. Session sandbox-file promotion remains a
+// separate POST /v1/sessions/:id/files path.
+v1.route("/files", buildNodeFileRoutes({
+  files: filesService,
+  filesBlob,
+  sessionExists: async ({ tenantId, sessionId }) =>
+    (await sessionsService.get({ tenantId, sessionId })) !== null,
+}));
 v1.get("/files", async (c) => {
   const t = c.var.tenant_id;
   const scopeId = c.req.query("scope_id") ?? undefined;
@@ -979,48 +731,6 @@ v1.delete("/files/:id", async (c) => {
 
 app.route("/v1", v1);
 
-// /v1/oma/* mirror — same Hono sub-app mounted twice. New OMA-only
-// endpoints should be added here only; the bare /v1/<resource> mounts
-// stay live for back-compat with Console + CLI.
-app.route("/v1/oma/me", buildMeRoutes({
-  services,
-  authDisabled,
-  loadTenant: async (tenantId) => {
-    const r = await sql
-      .prepare(`SELECT id, name FROM "tenant" WHERE id = ?`)
-      .bind(tenantId)
-      .first<{ id: string; name: string }>();
-    return r ?? null;
-  },
-  listMemberships: async (userId) => {
-    const r = await sql
-      .prepare(
-        `SELECT t.id AS id, t.name AS name, m.role AS role, m.created_at AS created_at
-           FROM "membership" m JOIN "tenant" t ON t.id = m.tenant_id
-          WHERE m.user_id = ? ORDER BY m.created_at ASC, t.id ASC`,
-      )
-      .bind(userId)
-      .all<{ id: string; name: string; role: string; created_at: number }>();
-    return r.results ?? [];
-  },
-  hasMembership: async (userId, tenantId) => {
-    const row = await sql
-      .prepare(
-        `SELECT 1 AS one FROM membership WHERE user_id = ? AND tenant_id = ? LIMIT 1`,
-      )
-      .bind(userId, tenantId)
-      .first<{ one: number }>();
-    return row !== null;
-  },
-  mintApiKey: (input) => mintApiKeyOnStorage(apiKeyStorage, input),
-}));
-app.route("/v1/oma/tenants", buildTenantRoutes({ services }));
-app.route("/v1/oma/api_keys", buildApiKeyRoutes({ storage: apiKeyStorage }));
-app.route("/v1/oma/evals", buildEvalRoutes({
-  evals: evalsService,
-  agents: agentsService,
-}));
-
 const consoleDir = process.env.CONSOLE_DIR;
 if (consoleDir) {
   const cwd = process.cwd();
@@ -1029,62 +739,6 @@ if (consoleDir) {
   app.get("/*", serveStatic({ root: rootRel, path: "index.html" }));
   logger.info({ op: "main-node.console_ui", dir: consoleDir, cwd_rel: rootRel }, "console UI served");
 }
-
-// oma-cap-adapter wire — exposes a Resolver against the in-process vault
-// services so a future Node outbound proxy (mirroring CF's mcp-proxy) can
-// inject cap_cli credentials into sandbox traffic. Wired here at the
-// services construction site so the resolver is available even before
-// the outbound surface lands.
-const _capResolver = new OmaVaultResolver({
-  sessions: {
-    get: ({ tenantId, sessionId }) => sessionsService.get({ tenantId, sessionId }) as never,
-  },
-  credentials: {
-    listByVaults: ({ tenantId, vaultIds }) =>
-      credentialService.listByVaults({ tenantId, vaultIds }) as never,
-    update: ({ tenantId, vaultId, credentialId, auth }) =>
-      credentialService.update({ tenantId, vaultId, credentialId, auth }) as never,
-    create: ({ tenantId, vaultId, displayName, auth }) =>
-      credentialService.create({ tenantId, vaultId, displayName, auth }) as never,
-  },
-});
-void _capResolver;
-
-// ── Session ↔ memory_store binding (Node-specific; not in package yet) ──
-v1.post("/sessions/:id/memory_stores", async (c) => {
-  const sid = c.req.param("id");
-  const session = await sql
-    .prepare(`SELECT id FROM sessions WHERE tenant_id = ? AND id = ?`)
-    .bind(c.var.tenant_id, sid)
-    .first();
-  if (!session) return c.json({ error: "Session not found" }, 404);
-  const body = await c.req.json<{ store_id: string; access?: string }>();
-  if (!body.store_id) return c.json({ error: "store_id is required" }, 400);
-  const store = await memoryService.getStore({
-    tenantId: c.var.tenant_id,
-    storeId: body.store_id,
-  });
-  if (!store) return c.json({ error: "Memory store not found" }, 404);
-  const access = body.access === "read_only" ? "read_only" : "read_write";
-  await sql
-    .prepare(
-      `INSERT INTO session_memory_stores (session_id, store_id, access, created_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(session_id, store_id) DO UPDATE SET access = excluded.access`,
-    )
-    .bind(sid, body.store_id, access, Date.now())
-    .run();
-  return c.json({ session_id: sid, store_id: body.store_id, access }, 201);
-});
-v1.get("/sessions/:id/memory_stores", async (c) => {
-  const r = await sql
-    .prepare(
-      `SELECT store_id, access, created_at FROM session_memory_stores WHERE session_id = ?`,
-    )
-    .bind(c.req.param("id"))
-    .all<{ store_id: string; access: string; created_at: number }>();
-  return c.json({ data: r.results ?? [] });
-});
 
 app.notFound((c) => c.json({ error: "not found" }, 404));
 app.onError((err, c) => {
@@ -1103,27 +757,8 @@ serve({ fetch: app.fetch, port, hostname: host }, (info) => {
   );
 });
 
-// Cron — eval-tick and memory retention sweep.
-const scheduler = buildNodeScheduler({
-  evalServices: {
-    agents: agentsService,
-    environments: environmentsService,
-    sessions: sessionsService,
-    evals: evalsService,
-    kv,
-  },
-  memory: memoryService,
-});
-await scheduler.start();
-logger.info({ op: "main-node.scheduler.started" }, "scheduler started");
-
 const shutdown = async (signal: string) => {
   logger.info({ op: "main-node.shutdown", signal }, `received ${signal}, shutting down`);
-  try { await scheduler.stop(); } catch (err) { logger.warn({ err, op: "main-node.shutdown.scheduler_stop_failed" }, "scheduler stop failed"); }
-  try { await memoryWatcher.stop(); } catch (err) { logger.warn({ err, op: "main-node.shutdown.watcher_stop_failed" }, "memory watcher stop failed"); }
-  if (s3Poller) {
-    try { await s3Poller.stop(); } catch (err) { logger.warn({ err, op: "main-node.shutdown.s3_poller_stop_failed" }, "s3-poller stop failed"); }
-  }
   if (hub instanceof PgEventStreamHub) {
     try { await hub.stop(); } catch (err) { logger.warn({ err, op: "main-node.shutdown.pg_hub_stop_failed" }, "pg-hub stop failed"); }
   }
@@ -1137,6 +772,10 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 function randomFallback(): string {
   // Pre-bootstrap fallback — logger is built before BetterAuth in the

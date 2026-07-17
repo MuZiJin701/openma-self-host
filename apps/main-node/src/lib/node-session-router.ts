@@ -167,6 +167,9 @@ export class NodeSessionRouter implements SessionRouter {
     const buf: SessionStreamFrame[] = [];
     let waker: ((v: IteratorResult<SessionStreamFrame>) => void) | null = null;
     let closed = false;
+    const deliveredKeys = new Set<string>();
+    let replaying = opts.replay || opts.lastEventId !== undefined;
+    const liveDuringReplay: string[] = [];
 
     // Spec-vs-extension filter. When `include` doesn't contain "chunks",
     // only Anthropic-spec event types pass through (defaults to spec-only,
@@ -186,6 +189,18 @@ export class NodeSessionRouter implements SessionRouter {
     const enqueue = (raw: string) => {
       if (closed) return;
       if (!passes(raw)) return;
+      let deliveredKey: string | null = null;
+      try {
+        const parsed = JSON.parse(raw) as { seq?: unknown; id?: unknown };
+        if (typeof parsed.seq === "number") deliveredKey = `seq:${parsed.seq}`;
+        else if (typeof parsed.id === "string") deliveredKey = `id:${parsed.id}`;
+      } catch {
+        // passes() already rejected malformed JSON.
+      }
+      if (deliveredKey) {
+        if (deliveredKeys.has(deliveredKey)) return;
+        deliveredKeys.add(deliveredKey);
+      }
       const frame: SessionStreamFrame = { data: raw };
       if (waker) {
         const w = waker;
@@ -196,21 +211,6 @@ export class NodeSessionRouter implements SessionRouter {
       }
     };
 
-    // Replay history > lastEventId before subscribing — gated by `replay`
-    // OR `lastEventId` (Last-Event-ID = SSE-native resume contract: client
-    // sent it, they want history > N regardless of opt-in flag).
-    if (opts.replay || opts.lastEventId !== undefined) {
-      const log = this.deps.newEventLog(sessionId);
-      const history = await log.getEventsAsync(opts.lastEventId ?? undefined);
-      for (const ev of history) {
-        const tid =
-          (ev as { session_thread_id?: string }).session_thread_id ??
-          "sthr_primary";
-        if (opts.threadId && tid !== opts.threadId) continue;
-        enqueue(JSON.stringify(ev));
-      }
-    }
-
     const writer = {
       closed: false,
       write(ev: unknown) {
@@ -218,7 +218,9 @@ export class NodeSessionRouter implements SessionRouter {
           (ev as { session_thread_id?: string }).session_thread_id ??
           "sthr_primary";
         if (opts.threadId && tid !== opts.threadId) return;
-        enqueue(JSON.stringify(ev));
+        const raw = JSON.stringify(ev);
+        if (replaying) liveDuringReplay.push(raw);
+        else enqueue(raw);
       },
       close() {
         if (closed) return;
@@ -231,6 +233,32 @@ export class NodeSessionRouter implements SessionRouter {
       },
     };
     const detach = this.deps.hub.attach(sessionId, writer);
+
+    // Subscribe before replaying history so an event published while the
+    // database read is in flight is buffered instead of falling into the
+    // replay/subscribe gap. deliveredKeys removes the duplicate when the
+    // same persisted row appears in both the live and replay paths.
+    try {
+      // Replay history > lastEventId — gated by `replay` OR `lastEventId`
+      // (Last-Event-ID is SSE-native resume and implies replay).
+      if (opts.replay || opts.lastEventId !== undefined) {
+        const log = this.deps.newEventLog(sessionId);
+        const history = await log.getEventsAsync(opts.lastEventId ?? undefined);
+        for (const ev of history) {
+          const tid =
+            (ev as { session_thread_id?: string }).session_thread_id ??
+            "sthr_primary";
+          if (opts.threadId && tid !== opts.threadId) continue;
+          enqueue(JSON.stringify(ev));
+        }
+      }
+      replaying = false;
+      for (const raw of liveDuringReplay.splice(0)) enqueue(raw);
+    } catch (error) {
+      writer.close();
+      detach();
+      throw error;
+    }
 
     return {
       [Symbol.asyncIterator]() {

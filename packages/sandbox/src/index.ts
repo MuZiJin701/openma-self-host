@@ -11,7 +11,6 @@ export {
   type SandboxOrchestrator,
   type SandboxCapabilities,
   type ProvisionInput,
-  type OrchestratorMemoryMount,
   type OrchestratorBackupHandle,
   type WorkspaceBackupService,
   type DefaultSandboxOrchestratorDeps,

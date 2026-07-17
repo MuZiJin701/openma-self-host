@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { TrashIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArchiveIcon } from "lucide-react";
 import { useApi } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
 import { Modal } from "../components/Modal";
@@ -9,19 +9,20 @@ import { DataTable, type ColumnDef } from "../components/DataTable";
 import { FacetedFilter } from "../components/FacetedFilter";
 import { FilterChip } from "../components/FilterChip";
 import { RowActionsMenu } from "../components/RowActionsMenu";
+import { archiveSkill, createSkillWithVersion } from "./skills-api";
 
 /* ---------- types ---------- */
 
 interface Skill {
   id: string;
-  display_title: string;
+  display_title?: string;
   name: string;
-  description: string;
-  source: "anthropic" | "custom";
-  latest_version: number;
+  description: string | null;
+  source?: "anthropic" | "custom";
+  latest_version: number | string | null;
+  archived_at?: string | null;
   created_at: string;
 }
-
 interface SkillFile {
   filename: string;
   content: string;
@@ -46,29 +47,6 @@ const SOURCE_OPTIONS: { value: SourceValue; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },
   { value: "custom", label: "Custom" },
 ];
-
-/* ---------- constants ---------- */
-
-// Mirrors the default UPLOAD_MAX_BYTES on the server (apps/main/src/quotas.ts).
-// Self-hosters who raised the server limit will lose this client-side
-// pre-rejection but the server will still enforce; that's an acceptable
-// degradation for an unusual config.
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isZipFile(file: File): boolean {
-  const name = file.name.toLowerCase();
-  return (
-    name.endsWith(".zip") ||
-    file.type === "application/zip" ||
-    file.type === "application/x-zip-compressed"
-  );
-}
 
 /* ---------- component ---------- */
 
@@ -100,11 +78,10 @@ export function SkillsList() {
   /* create dialog */
   const [showCreate, setShowCreate] = useState(false);
   const [createTitle, setCreateTitle] = useState("");
-  const [createZip, setCreateZip] = useState<File | null>(null);
+  const [createDescription, setCreateDescription] = useState("");
+  const [createContent, setCreateContent] = useState("");
   const [createUploading, setCreateUploading] = useState(false);
-  const [createDragOver, setCreateDragOver] = useState(false);
   const [createError, setCreateError] = useState("");
-  const createInputRef = useRef<HTMLInputElement>(null);
 
   /* detail dialog */
   const [detail, setDetail] = useState<Skill | null>(null);
@@ -114,11 +91,9 @@ export function SkillsList() {
 
   /* new version sub-form inside detail */
   const [showNewVersion, setShowNewVersion] = useState(false);
-  const [nvZip, setNvZip] = useState<File | null>(null);
+  const [nvContent, setNvContent] = useState("");
   const [nvUploading, setNvUploading] = useState(false);
-  const [nvDragOver, setNvDragOver] = useState(false);
   const [nvError, setNvError] = useState("");
-  const nvInputRef = useRef<HTMLInputElement>(null);
 
   /* ---- loaders ---- */
 
@@ -126,47 +101,29 @@ export function SkillsList() {
 
   const resetCreate = () => {
     setCreateTitle("");
-    setCreateZip(null);
+    setCreateDescription("");
+    setCreateContent("");
     setCreateError("");
-    setCreateDragOver(false);
-    if (createInputRef.current) createInputRef.current.value = "";
-  };
-
-  // Validate file synchronously and set state. Returns true on success
-  // so callers can know whether to clear the surrounding drop-zone state.
-  const acceptCreateZip = (file: File): boolean => {
-    if (!isZipFile(file)) {
-      setCreateError(`"${file.name}" is not a .zip file`);
-      return false;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setCreateError(
-        `Zip is ${formatBytes(file.size)}, exceeds the ${formatBytes(MAX_UPLOAD_BYTES)} upload limit`,
-      );
-      return false;
-    }
-    setCreateError("");
-    setCreateZip(file);
-    return true;
   };
 
   const doCreate = async () => {
-    if (!createZip) return;
+    if (!createTitle.trim() || !createContent.trim()) {
+      setCreateError("Skill name and SKILL.md content are required.");
+      return;
+    }
     setCreateError("");
     setCreateUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", createZip);
-      // Empty string here would override the server-side fallback to the
-      // SKILL.md frontmatter name; only send when the user actually typed
-      // something.
-      if (createTitle.trim()) fd.append("display_title", createTitle.trim());
-      await api("/v1/skills/upload", { method: "POST", body: fd });
+      await createSkillWithVersion(api, {
+        name: createTitle.trim(),
+        description: createDescription.trim(),
+        content: createContent,
+      });
       setShowCreate(false);
       resetCreate();
-      load();
+      void load();
     } catch (e: any) {
-      setCreateError(e?.message || "Upload failed");
+      setCreateError(e?.message || "Skill creation failed");
     } finally {
       setCreateUploading(false);
     }
@@ -179,7 +136,7 @@ export function SkillsList() {
     setDetailLoading(true);
     setShowNewVersion(false);
     setNvError("");
-    setNvZip(null);
+    setNvContent("");
     try {
       const [versionDetail, versionsRes] = await Promise.all([
         api<VersionDetail>(
@@ -201,7 +158,7 @@ export function SkillsList() {
     setDetailFiles([]);
     setDetailVersions([]);
     setShowNewVersion(false);
-    setNvZip(null);
+    setNvContent("");
     setNvError("");
   };
 
@@ -209,74 +166,52 @@ export function SkillsList() {
 
   const startNewVersion = () => {
     setNvError("");
-    setNvZip(null);
-    setNvDragOver(false);
-    if (nvInputRef.current) nvInputRef.current.value = "";
+    setNvContent("");
     setShowNewVersion(true);
   };
 
-  const acceptNvZip = (file: File): boolean => {
-    if (!isZipFile(file)) {
-      setNvError(`"${file.name}" is not a .zip file`);
-      return false;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setNvError(
-        `Zip is ${formatBytes(file.size)}, exceeds the ${formatBytes(MAX_UPLOAD_BYTES)} upload limit`,
-      );
-      return false;
-    }
-    setNvError("");
-    setNvZip(file);
-    return true;
-  };
-
   const doNewVersion = async () => {
-    if (!detail || !nvZip) return;
+    if (!detail || !nvContent.trim()) {
+      setNvError("SKILL.md content is required.");
+      return;
+    }
     setNvError("");
     setNvUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", nvZip);
-      await api(`/v1/skills/${detail.id}/versions/upload`, {
+      await api(`/v1/skills/${detail.id}/versions`, {
         method: "POST",
-        body: fd,
+        body: JSON.stringify({
+          files: [{ filename: "SKILL.md", content: nvContent, content_type: "text/markdown" }],
+        }),
       });
       setShowNewVersion(false);
-      setNvZip(null);
+      setNvContent("");
       /* refresh both the list and this detail */
       load();
       const refreshed = await api<Skill>(`/v1/skills/${detail.id}`);
       openDetail(refreshed);
     } catch (e: any) {
-      setNvError(e?.message || "Upload failed");
+      setNvError(e?.message || "Version publish failed");
     } finally {
       setNvUploading(false);
     }
   };
 
-  /* ---- delete ---- */
+  /* ---- archive ---- */
 
-  const deleteSkill = async () => {
-    if (!detail) return;
-    if (!confirm("Delete this skill? This cannot be undone.")) return;
+  const archiveSkillById = async (skill: Skill) => {
+    const name = skill.display_title || skill.name;
+    if (!confirm(`Archive ${name}?`)) return;
     try {
-      await api(`/v1/skills/${detail.id}`, { method: "DELETE" });
+      await archiveSkill(api, skill.id);
       closeDetail();
-      load();
+      void load();
     } catch {}
   };
 
-  // Row-level delete invoked from the per-row actions menu. Separate from
-  // the modal's deleteSkill because the row's confirm copy uses the
-  // skill's own title and there's no detail dialog to close after.
-  const deleteSkillById = async (skill: Skill) => {
-    const name = skill.display_title || skill.name;
-    if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
-    try {
-      await api(`/v1/skills/${skill.id}`, { method: "DELETE" });
-      load();
-    } catch {}
+  const archiveDetail = async () => {
+    if (!detail) return;
+    await archiveSkillById(detail);
   };
 
   /* ---- helpers ---- */
@@ -292,7 +227,7 @@ export function SkillsList() {
     () => [
       {
         id: "name",
-        accessorKey: "display_title",
+        accessorKey: "name",
         header: "Name",
         cell: ({ row }) => (
           <div className="min-w-0">
@@ -361,12 +296,12 @@ export function SkillsList() {
               label={`Actions for ${s.display_title || s.name}`}
               actions={[
                 {
-                  label: "Delete",
-                  icon: <TrashIcon className="size-4" />,
+                  label: "Archive",
+                  icon: <ArchiveIcon className="size-4" />,
                   destructive: true,
                   disabled: isBuiltIn,
                   onSelect: () => {
-                    void deleteSkillById(s);
+                    void archiveSkillById(s);
                   },
                 },
               ]}
@@ -413,7 +348,7 @@ export function SkillsList() {
   // is a no-op so we don't open a half-empty detail dialog that would 404
   // on its version fetches.
   const handleRowClick = (s: Skill) => {
-    if (s.source === "custom") openDetail(s);
+    if (s.source !== "anthropic") openDetail(s);
   };
 
   /* ---- render ---- */
@@ -442,8 +377,8 @@ export function SkillsList() {
           setShowCreate(false);
           resetCreate();
         }}
-        title="Upload Custom Skill"
-        subtitle="Upload an Anthropic-style skill folder packaged as a .zip."
+        title="Create Custom Skill"
+        subtitle="Create a skill and publish its initial SKILL.md version."
         maxWidth="max-w-xl"
         footer={
           <>
@@ -459,11 +394,11 @@ export function SkillsList() {
             </Button>
             <Button
               onClick={doCreate}
-              disabled={!createZip || createUploading}
+              disabled={createUploading}
               loading={createUploading}
               loadingLabel="Uploading..."
             >
-              Upload
+              Create
             </Button>
           </>
         }
@@ -475,42 +410,36 @@ export function SkillsList() {
             </div>
           )}
 
-          {/* Drop zone */}
-          <DropZone
-            file={createZip}
-            dragOver={createDragOver}
-            onDragOver={(over) => setCreateDragOver(over)}
-            onFile={(f) => acceptCreateZip(f)}
-            onClear={() => {
-              setCreateZip(null);
-              if (createInputRef.current) createInputRef.current.value = "";
-            }}
-            inputRef={createInputRef}
-            disabled={createUploading}
-          />
-
-          {/* Display Title (optional override) */}
           <div>
-            <label className="text-sm text-fg-muted block mb-1">
-              Display Title{" "}
-              <span className="text-fg-subtle">
-                (optional — falls back to SKILL.md <code>name</code>)
-              </span>
-            </label>
+            <label className="text-sm text-fg-muted block mb-1">Skill name</label>
             <input
               value={createTitle}
               onChange={(e) => setCreateTitle(e.target.value)}
               className={inputCls}
-              placeholder="Leave blank to use the skill's own name"
+              placeholder="release-notes"
               disabled={createUploading}
             />
           </div>
-
-          <p className="text-xs text-fg-subtle">
-            The zip must contain <code>SKILL.md</code> at the root, or one
-            top-level folder containing it (the common case when you
-            <code> zip -r my-skill.zip my-skill</code>).
-          </p>
+          <div>
+            <label className="text-sm text-fg-muted block mb-1">Description</label>
+            <input
+              value={createDescription}
+              onChange={(e) => setCreateDescription(e.target.value)}
+              className={inputCls}
+              placeholder="Release note guidance"
+              disabled={createUploading}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-fg-muted block mb-1">SKILL.md</label>
+            <textarea
+              value={createContent}
+              onChange={(e) => setCreateContent(e.target.value)}
+              className={`${inputCls} min-h-40 resize-y font-mono text-xs`}
+              placeholder="# Release notes\n\nDescribe how the Agent should use this skill."
+              disabled={createUploading}
+            />
+          </div>
         </div>
       </Modal>
 
@@ -535,8 +464,8 @@ export function SkillsList() {
           <div className="space-y-5">
             {/* Actions */}
             <div className="flex justify-end">
-              <Button variant="destructive" size="sm" onClick={deleteSkill}>
-                Delete
+              <Button variant="destructive" size="sm" onClick={archiveDetail}>
+                Archive
               </Button>
             </div>
 
@@ -547,7 +476,7 @@ export function SkillsList() {
                   Display Title
                 </label>
                 <p className="text-sm font-medium">
-                  {detail.display_title}
+                  {detail.display_title || detail.name}
                 </p>
               </div>
               <div>
@@ -637,23 +566,18 @@ export function SkillsList() {
             {showNewVersion && (
               <div className="border border-border-strong rounded-lg p-4 bg-bg-surface/50 space-y-3">
                 <h3 className="text-sm font-medium text-fg">
-                  Upload New Version
+                  Publish New Version
                 </h3>
                 {nvError && (
                   <div className="text-sm text-danger bg-danger-subtle border border-danger/30 rounded-lg px-3 py-2">
                     {nvError}
                   </div>
                 )}
-                <DropZone
-                  file={nvZip}
-                  dragOver={nvDragOver}
-                  onDragOver={(over) => setNvDragOver(over)}
-                  onFile={(f) => acceptNvZip(f)}
-                  onClear={() => {
-                    setNvZip(null);
-                    if (nvInputRef.current) nvInputRef.current.value = "";
-                  }}
-                  inputRef={nvInputRef}
+                <textarea
+                  value={nvContent}
+                  onChange={(e) => setNvContent(e.target.value)}
+                  className={`${inputCls} min-h-40 resize-y font-mono text-xs`}
+                  placeholder="# Updated skill instructions"
                   disabled={nvUploading}
                 />
                 <div className="flex justify-end gap-2">
@@ -662,7 +586,7 @@ export function SkillsList() {
                     disabled={nvUploading}
                     onClick={() => {
                       setShowNewVersion(false);
-                      setNvZip(null);
+                      setNvContent("");
                       setNvError("");
                     }}
                   >
@@ -670,9 +594,9 @@ export function SkillsList() {
                   </Button>
                   <Button
                     onClick={doNewVersion}
-                    disabled={!nvZip || nvUploading}
+                    disabled={nvUploading}
                     loading={nvUploading}
-                    loadingLabel="Uploading..."
+                    loadingLabel="Publishing..."
                   >
                     Publish Version
                   </Button>
@@ -726,100 +650,5 @@ export function SkillsList() {
         ) : null}
       </Modal>
     </DataTable>
-  );
-}
-
-/* ---------- DropZone ---------- */
-
-interface DropZoneProps {
-  file: File | null;
-  dragOver: boolean;
-  onDragOver: (over: boolean) => void;
-  onFile: (file: File) => boolean;
-  onClear: () => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  disabled?: boolean;
-}
-
-function DropZone({
-  file,
-  dragOver,
-  onDragOver,
-  onFile,
-  onClear,
-  inputRef,
-  disabled,
-}: DropZoneProps) {
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    onDragOver(false);
-    if (disabled) return;
-    const f = e.dataTransfer.files?.[0];
-    if (f) onFile(f);
-  };
-
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        if (!disabled) onDragOver(true);
-      }}
-      onDragLeave={(e) => {
-        e.preventDefault();
-        onDragOver(false);
-      }}
-      onDrop={handleDrop}
-      className={[
-        "border-2 border-dashed rounded-lg px-4 py-6 text-center transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)]",
-        dragOver
-          ? "border-brand bg-brand/5"
-          : "border-border bg-bg-surface/30",
-        disabled ? "opacity-60 pointer-events-none" : "",
-      ].join(" ")}
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".zip,application/zip,application/x-zip-compressed"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onFile(f);
-        }}
-      />
-      {file ? (
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 text-left">
-            <div className="text-sm font-medium text-fg truncate">{file.name}</div>
-            <div className="text-xs text-fg-subtle">{formatBytes(file.size)}</div>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => inputRef.current?.click()}
-            >
-              Replace
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onClear}>
-              Remove
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <div className="text-sm text-fg-muted">
-            Drag &amp; drop a <code>.zip</code>, or
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => inputRef.current?.click()}
-          >
-            Choose file
-          </Button>
-        </div>
-      )}
-    </div>
   );
 }

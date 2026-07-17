@@ -241,12 +241,21 @@ export class SqlPendingQueue {
 
   async cancelAll(sessionId: string): Promise<SqlPendingRow[]> {
     const rows = await this.list(sessionId, false);
-    if (rows.length === 0) return [];
     const cancelledAt = Date.now();
+    if (rows.length > 0) {
+      await this.sql
+        .prepare(
+          `UPDATE session_pending_events SET cancelled_at = ?
+            WHERE session_id = ? AND cancelled_at IS NULL`,
+        )
+        .bind(cancelledAt, sessionId)
+        .run();
+    }
     await this.sql
       .prepare(
-        `UPDATE session_pending_events SET cancelled_at = ?
-          WHERE session_id = ? AND cancelled_at IS NULL`,
+        `UPDATE session_turn_runs
+            SET status = 'failed', completed_at = ?
+          WHERE session_id = ? AND status IN ('promoted', 'running')`,
       )
       .bind(cancelledAt, sessionId)
       .run();

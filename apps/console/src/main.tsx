@@ -28,15 +28,8 @@ import { SessionsList } from "./pages/SessionsList";
 import { FilesList } from "./pages/FilesList";
 import { EnvironmentsList } from "./pages/EnvironmentsList";
 import { EnvironmentDetail } from "./pages/EnvironmentDetail";
-import { VaultsList } from "./pages/VaultsList";
-import { VaultDetail } from "./pages/VaultDetail";
 import { SkillsList } from "./pages/SkillsList";
-import { MemoryStoresList } from "./pages/MemoryStoresList";
-import { MemoryStoreDetail } from "./pages/MemoryStoreDetail";
 import { ModelCardsList } from "./pages/ModelCardsList";
-import { ApiKeysList } from "./pages/ApiKeysList";
-import { EvalRunsList } from "./pages/EvalRunsList";
-import { EvalRunDetail } from "./pages/EvalRunDetail";
 import { consolePlugins } from "./plugins/registry";
 
 /**
@@ -96,18 +89,6 @@ const protectedRoutes: RouteObject[] = [
   },
   { path: "files", element: <FilesList />, handle: { crumb: "Files" } },
   {
-    path: "evals",
-    handle: { crumb: "Eval Runs" },
-    children: [
-      { index: true, element: <EvalRunsList /> },
-      {
-        path: ":id",
-        element: <EvalRunDetail />,
-        handle: { crumb: (m: UIMatch) => (m.params.id as string | undefined) ?? "Eval Run" },
-      },
-    ],
-  },
-  {
     path: "environments",
     handle: { crumb: "Environments" },
     children: [
@@ -120,32 +101,7 @@ const protectedRoutes: RouteObject[] = [
     ],
   },
   { path: "skills", element: <SkillsList />, handle: { crumb: "Skills" } },
-  {
-    path: "vaults",
-    handle: { crumb: "Credential Vaults" },
-    children: [
-      { index: true, element: <VaultsList /> },
-      {
-        path: ":id",
-        element: <VaultDetail />,
-        handle: { crumb: (m: UIMatch) => (m.params.id as string | undefined) ?? "Vault" },
-      },
-    ],
-  },
-  {
-    path: "memory",
-    handle: { crumb: "Memory Stores" },
-    children: [
-      { index: true, element: <MemoryStoresList /> },
-      {
-        path: ":id",
-        element: <MemoryStoreDetail />,
-        handle: { crumb: (m: UIMatch) => (m.params.id as string | undefined) ?? "Memory Store" },
-      },
-    ],
-  },
   { path: "model-cards", element: <ModelCardsList />, handle: { crumb: "Model Cards" } },
-  { path: "api-keys", element: <ApiKeysList />, handle: { crumb: "API Keys" } },
   // Plugin-contributed routes (hosted-only extensions). Default empty in
   // OSS — hosted deploy overlays plugins/registry.ts to inject billing
   // / etc. PluginRoute keeps the same `{ path, element }` shape that

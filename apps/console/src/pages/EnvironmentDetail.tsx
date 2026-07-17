@@ -25,7 +25,6 @@ type AnyManager = (typeof ALL_MANAGERS)[number];
 interface NetworkingConfig {
   type: "unrestricted" | "limited";
   allowed_hosts?: string[];
-  allow_mcp_servers?: boolean;
   allow_package_managers?: boolean;
 }
 
@@ -84,7 +83,6 @@ export function EnvironmentDetail() {
   const [description, setDescription] = useState("");
   const [networking, setNetworking] = useState<NetworkingConfig>({
     type: "unrestricted",
-    allow_mcp_servers: false,
     allow_package_managers: false,
     allowed_hosts: [],
   });
@@ -123,7 +121,6 @@ export function EnvironmentDetail() {
     const net: NetworkingConfig = e.config.networking ?? { type: "unrestricted" };
     setNetworking({
       type: net.type ?? "unrestricted",
-      allow_mcp_servers: !!net.allow_mcp_servers,
       allow_package_managers: !!net.allow_package_managers,
       allowed_hosts: net.allowed_hosts ?? [],
     });
@@ -254,13 +251,6 @@ export function EnvironmentDetail() {
               </div>
             </Field>
 
-            <Toggle
-              label="Allow MCP server network access"
-              checked={!!networking.allow_mcp_servers}
-              onChange={(v) =>
-                setNetworking({ ...networking, allow_mcp_servers: v })
-              }
-            />
             <Toggle
               label="Allow package manager network access"
               checked={!!networking.allow_package_managers}
@@ -622,7 +612,6 @@ function buildNetworking(
   if (net.type === "unrestricted") {
     return {
       type: "unrestricted",
-      allow_mcp_servers: !!net.allow_mcp_servers,
       allow_package_managers: !!net.allow_package_managers,
       // Drop allowed_hosts when unrestricted — it's meaningless and the
       // backend may complain about stale entries.
@@ -630,7 +619,6 @@ function buildNetworking(
   }
   return {
     type: "limited",
-    allow_mcp_servers: !!net.allow_mcp_servers,
     allow_package_managers: !!net.allow_package_managers,
     allowed_hosts: hosts,
   };

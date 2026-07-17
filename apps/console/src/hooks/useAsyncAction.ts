@@ -6,7 +6,7 @@ import { useCallback, useRef, useState } from "react";
  * Returns a `{ run, loading }` pair to wire into Button:
  *
  *   const create = useAsyncAction(async () => {
- *     await api("/v1/api_keys", { method: "POST", body: ... });
+ *     await api("/v1/agents", { method: "POST", body: ... });
  *   });
  *   <Button onClick={create.run} loading={create.loading} loadingLabel="Creating…">
  *     Create
@@ -15,7 +15,8 @@ import { useCallback, useRef, useState } from "react";
  * Why this exists: every "create / save / delete / submit" button in the
  * Console used to wire its own `[loading, setLoading]` state and either
  * forget the disable-on-submit guard or copy-paste it inconsistently. The
- * Create API Key button forgot it entirely — a single fast double-click
+ * A mutation button that forgot it entirely could otherwise allow
+ * a single fast double-click
  * produced two duplicate records. Centralizing here means new mutation
  * buttons get the right behavior by default.
  *

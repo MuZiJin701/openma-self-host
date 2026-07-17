@@ -12,7 +12,6 @@ export interface CreateSessionInput {
   agent: string;
   environment_id: string;
   title?: string;
-  vault_ids?: string[];
   resources?: unknown[];
 }
 

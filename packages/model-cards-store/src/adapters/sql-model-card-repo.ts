@@ -252,6 +252,20 @@ export class SqlModelCardRepo implements ModelCardRepo {
     );
   }
 
+  async archive(tenantId: string, cardId: string, archivedAt: number): Promise<ModelCardRow> {
+    const existing = await this.get(tenantId, cardId);
+    if (!existing) throw new ModelCardNotFoundError();
+    await runOnce(
+      this.db
+        .update(model_cards)
+        .set({ archived_at: archivedAt, is_default: 0, updated_at: archivedAt })
+        .where(and(eq(model_cards.id, cardId), eq(model_cards.tenant_id, tenantId))),
+    );
+    const row = await this.get(tenantId, cardId);
+    if (!row) throw new ModelCardNotFoundError();
+    return row;
+  }
+
   async setDefault(
     tenantId: string,
     cardId: string,

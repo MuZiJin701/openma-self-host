@@ -33,4 +33,21 @@ describe("WorkerPool", () => {
     expect(await pool.cancel("missing")).toBe(false);
     await pool.shutdown();
   });
+
+  it("reports timeout to the turn dispatcher after the job observes abort", async () => {
+    const pool = new WorkerPool({ maxActive: 1, tenantMaxActive: 1, timeoutMs: 10 });
+    await pool.submit({
+      jobId: "timeout",
+      tenantId: "tenant-a",
+      sessionId: "session-a",
+      run: async (signal) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+    });
+
+    await expect(pool.waitFor("timeout")).resolves.toBe("timeout");
+    await pool.shutdown();
+  });
 });

@@ -4,16 +4,11 @@
 // future deployments) can implement the same shape without taking on the
 // apps/agent → cloudflare:workers → @cloudflare/sandbox import chain.
 //
-// Implementations:
-//   - CloudflareSandbox  (apps/agent/src/runtime/sandbox.ts) — wraps the
-//     @cloudflare/sandbox container SDK + DO storage. Stays where it is
-//     so its CF-only deps don't bleed into this package.
+// Implementation:
 //   - LocalSubprocessSandbox (./adapters/local-subprocess.ts) — Node
 //     child_process + per-session workdir. Local dev. NO security
 //     isolation — runs on the host filesystem. Don't ship to prod with
 //     untrusted agents.
-//   - E2BSandbox (TODO) — wraps @e2b/sdk for Firecracker microVM
-//     isolation. Production self-host path.
 
 export interface ProcessHandle {
   id: string;
@@ -25,24 +20,19 @@ export interface ProcessHandle {
 
 export interface SandboxExecutor {
   exec(command: string, timeout?: number): Promise<string>;
+  /** Optional abort-aware execution for adapters that can kill a running
+   * process. Legacy exec() remains the compatibility path. */
+  execWithSignal?(command: string, timeout?: number, signal?: AbortSignal): Promise<string>;
   /** Start a process without blocking. Returns handle for kill/status/logs. */
   startProcess?(command: string): Promise<ProcessHandle | null>;
   /** Set global environment variables for all subsequent exec calls. */
   setEnvVars?(envVars: Record<string, string>): Promise<void>;
-  /** Native git checkout (if supported by sandbox). */
-  gitCheckout?(repoUrl: string, options: { branch?: string; targetDir?: string }): Promise<unknown>;
-  /** Register secrets injected only for commands matching a prefix (e.g. "git", "gh"). */
-  registerCommandSecrets?(commandPrefix: string, secrets: Record<string, string>): void;
   /**
    * Bind the outbound handler with this session's identifying context.
    * On CF the handler intercepts container HTTPS requests and RPCs into
    * the main worker for vault credential injection. On other backends it's
    * a no-op or implementation-specific.
    */
-  setOutboundContext?(opts: {
-    tenantId: string;
-    sessionId: string;
-  }): Promise<void>;
   /**
    * Hand the (tenant, env, session) tuple to the OmaSandbox container DO so
    * its onActivityExpired hook (sleepAfter teardown) records the final
@@ -64,6 +54,8 @@ export interface SandboxExecutor {
    *  promotion. Optional so adapters that only see text can omit it. */
   readFileBytes?(path: string): Promise<Uint8Array>;
   writeFile(path: string, content: string): Promise<string>;
+  /** Mark a sandbox path read-only when the adapter can enforce it locally. */
+  makeReadOnly?(path: string): Promise<void>;
   /**
    * Write raw bytes. Use this for binary files (PDFs, images, archives) —
    * the string-based writeFile would corrupt them via UTF-8 round-tripping.
@@ -74,11 +66,6 @@ export interface SandboxExecutor {
    * On CF backed by R2 + FUSE; on Node we hydrate by copying. Read-only
    * mounts reject writes.
    */
-  mountMemoryStore?(opts: {
-    storeName: string;
-    storeId: string;
-    readOnly: boolean;
-  }): Promise<void>;
   /**
    * Mount FILES_BUCKET at /mnt/session/outputs/ scoped to (tenantId, sessionId)
    * via R2 prefix. Anything the agent writes here appears in real time via
@@ -143,7 +130,6 @@ export interface SandboxFactoryContext {
   /** Memory blob root on the host. Adapters that mount memory stores
    *  via symlink (LocalSubprocess) read from this; remote adapters
    *  (Daytona/E2B) typically use s3fs and ignore it. */
-  memoryRoot?: string;
   /** Session-outputs root on the host. LocalSubprocess symlinks
    *  per-(tenant, session) dirs under here when mountSessionOutputs
    *  is called; remote adapters that don't host-mount can ignore it. */
@@ -171,14 +157,3 @@ export type SandboxFactory = (
  *  undefined when any required key is missing — adapters interpret that
  *  as "no remote memory mount available". Both Daytona and E2B share
  *  this shape (s3fs config). */
-export function readS3MemoryBucket(env: SandboxFactoryEnv):
-  | { endpoint: string; accessKey: string; secretKey: string; bucketName: string }
-  | undefined {
-  const e = env.MEMORY_S3_ENDPOINT;
-  const a = env.MEMORY_S3_ACCESS_KEY;
-  const s = env.MEMORY_S3_SECRET_KEY;
-  const b = env.MEMORY_S3_BUCKET;
-  return e && a && s && b
-    ? { endpoint: e, accessKey: a, secretKey: s, bucketName: b }
-    : undefined;
-}

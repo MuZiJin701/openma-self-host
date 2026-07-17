@@ -1,40 +1,23 @@
-# Security Policy
+# Security and deployment boundary
 
-## Reporting a Vulnerability
+## Reporting
 
-If you discover a security vulnerability in Open Managed Agents, please
-report it privately. **Do not file a public GitHub issue for security
-issues.**
+Report vulnerabilities privately through the repository's security channel. Do not publish API
+keys, tokens, prompts, database files, or sensitive event payloads in issues or logs.
 
-Report via GitHub's private vulnerability reporting:
-https://github.com/openma-ai/open-managed-agents/security/advisories/new
+## Self-host boundary
 
-Please include:
-- A description of the issue and its potential impact
-- Steps to reproduce, or a proof-of-concept if possible
-- The version / commit affected
-- Your contact info if you'd like a follow-up
+- Tenant membership and `tenant_id` checks are required for every resource route.
+- Workspace paths are derived by the server; request bodies cannot select arbitrary host paths.
+- Model Card API keys are encrypted with `PLATFORM_ROOT_SECRET` and never returned in full.
+- `AUTH_DISABLED=1` is for local single-user development only.
+- `subprocess` is trusted host execution, not a security sandbox. Only run agents and prompts you
+  trust, and isolate the host at the deployment level when needed.
+- Blob storage is localfs in this project. PostgreSQL is supported as the shared database; S3,
+  remote sandbox providers, Vault proxy, OAuth, Webhook, and Cloudflare deployment are out of scope.
 
-We aim to acknowledge reports within 3 business days and to issue a fix
-or mitigation within 30 days for high-severity issues. We will credit
-you in the advisory unless you prefer to remain anonymous.
+## Data handling
 
-## Scope
-
-In scope:
-- The self-host runtime (`apps/main-node`, `apps/oma-vault`)
-- The retained runtime packages and Console
-- Self-host deployment paths documented in `openma-self-host-operations.md`
-
-Out of scope:
-- Vulnerabilities in third-party LLM providers (Anthropic, OpenAI, etc.)
-  — please report to the respective vendor.
-- Self-inflicted misconfigurations (e.g. running with `AUTH_DISABLED=1`
-  in production).
-- Issues only reproducible against the hosted instance at `openma.dev`
-  — those should go through the vendor's own channel.
-
-## Supported Versions
-
-Only the latest minor release line is actively supported with security
-fixes. Older versions may receive backports at maintainer discretion.
+Do not delete or expose `data/`, auth databases, Workspace files, or historical migrations during
+normal maintenance. Migrations are forward-only. Keep secrets in environment/configuration stores,
+not source, tests, docs, or error messages.

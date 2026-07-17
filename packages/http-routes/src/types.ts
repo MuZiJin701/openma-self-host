@@ -9,11 +9,7 @@
 
 import type { Context } from "hono";
 import type { AgentService } from "@open-managed-agents/agents-store";
-import type { VaultService } from "@open-managed-agents/vaults-store";
-import type { CredentialService } from "@open-managed-agents/credentials-store";
-import type { MemoryStoreService } from "@open-managed-agents/memory-store";
 import type { SessionService } from "@open-managed-agents/sessions-store";
-import type { DreamService } from "@open-managed-agents/dreams-store";
 import type { SqlClient } from "@open-managed-agents/sql-client";
 import type { KvStore } from "@open-managed-agents/kv-store";
 import type {
@@ -21,7 +17,6 @@ import type {
   MetricsRecorder,
   Tracer,
 } from "@open-managed-agents/observability";
-import type { BrowserHarness } from "@open-managed-agents/browser-harness";
 
 export interface BackgroundRunner {
   /** Fire-and-forget on Node (with logged error handler), waitUntil on CF. */
@@ -58,13 +53,7 @@ export interface SessionRegistryLike {
 export interface RouteServices {
   sql: SqlClient;
   agents: AgentService;
-  vaults: VaultService;
-  credentials: CredentialService;
-  memory: MemoryStoreService;
   sessions: SessionService;
-  /** Dreams is optional because older route fixtures only exercise
-   * non-dream resources. buildDreamRoutes requires it at runtime. */
-  dreams?: DreamService;
   kv: KvStore;
   /** Node may create a tenant-scoped SQL KV adapter per request. Legacy
    * fixtures can omit this and continue using the fixed `kv` instance. */
@@ -81,8 +70,6 @@ export interface RouteServices {
    *  the routes (CF returns from R2 via blobStore instead — wire it via
    *  outputsBlob). */
   outputsRoot?: string | null;
-  // ── Observability — appended (P6). New fields go AT THE END so a
-  // parallel branch adding `browser` (P7) merges without conflict. ──
   /** Structured logger. Routes pull `services.logger.child({...})` to
    *  get a per-request handle; bootstrap-time top-level logger is fine
    *  for handlers that don't need extra binding. Optional so legacy
@@ -95,14 +82,6 @@ export interface RouteServices {
   /** OTel-flavored span source. Optional; CF wires a noop, Node wires
    *  the real OTel SDK when OTEL_EXPORTER_OTLP_ENDPOINT is set. */
   tracer?: Tracer;
-  // ── Browser tool — appended (P7). Strictly additive: when null/absent,
-  // browser tools are unavailable and agents fall back to web_fetch. ──
-  /** Browser-tool factory. CF wires the @cloudflare/playwright adapter,
-   *  Node self-host wires playwright-core, CDP-connect, or the
-   *  throw-on-call Disabled adapter depending on env. Null when no
-   *  backend is configured (legacy fixtures); the harness silently
-   *  skips browser tool registration. */
-  browser?: BrowserHarness | null;
 }
 
 /** Per-request services accessor. The Node server passes a callback that resolves

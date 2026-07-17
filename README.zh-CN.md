@@ -1,28 +1,25 @@
 # OpenMA Self-Host
 
-OpenMA Self-Host 是一个面向多用户的最小化、自部署 Agent 服务。
-每个用户对应一个租户和一个独立 Workspace；一个用户可以创建多个 Agent 和多个 Session。
+OpenMA Self-Host 是一个精简的多用户 Agent 服务。共享 SQLite 或 PostgreSQL 数据库存放
+租户配置和业务元数据；每个租户派生一个独立 Workspace，保存该用户的全部内容。Console、
+项目 SDK、CLI 和 Anthropic 兼容 HTTP 客户端共享同一套 `/v1` 接口。
 
-## 保留功能
+## 核心范围
 
-- Agent、Session API 和 Console 聊天界面
-- 每个用户独立的 Workspace 存储
-- 租户隔离的 Model Cards 和 Skills
-- `env-local-runtime` 及可信的本地 `subprocess` 执行器
-- 通过 Model Cards 调用本地或云端模型 API
-- SQLite 本地部署，以及用于共享部署的 PostgreSQL 支持
+- Agent、Session、租户/Workspace 隔离、Model Cards、Skills、Environment、Files
+- 保留 Environment CRUD，但创建记录只能选择 `env-local-runtime`
+- Session 只使用可信本地 `subprocess` 执行后端
+- 本地文件 Blob；简单部署使用 SQLite，共享部署使用 PostgreSQL
+- 通过租户 Model Cards 调用本地或云端 Anthropic-compatible 模型
 
-## 已移除功能
+Vault、Memory、Dreams、Evals、Integrations、MCP、OAuth、Webhook、Runtime Daemon、远程
+sandbox provider、S3 和 Cloudflare Worker 均不属于本项目。历史 migration 为向前兼容保留，
+本轮不作为接口启用，也不删除或回滚。
 
-本项目不再包含 Integrations。Linear、GitHub、Slack 页面、菜单、前端 API 客户端、
-provider 包、OAuth 回调、Webhook 接收接口、集成专用静态素材以及
-`apps/integrations` Worker 均已删除。官方站点、Cloudflare Worker 应用和集成部署脚本
-不会被构建或启动。
+## 开发与运行
 
-## 开发与验证
-
-推荐使用 Node.js 22 或更高版本，以及 pnpm 11。Windows 下推荐 Node.js 22，
-因为 SQLite 原生依赖对该运行时提供预编译包。
+Codex、源码、命令、依赖和测试全部在 WSL 的
+`/home/chenjinchi/project/openma-self-host` 执行。
 
 ```bash
 pnpm install
@@ -31,24 +28,18 @@ pnpm db:check
 pnpm --filter managed-agents-console build
 ```
 
-也可以在 WSL2 Ubuntu 内运行 Docker Desktop 提供的 Linux Engine。推荐在 Docker Desktop
-的 `Settings > Resources > WSL Integration` 中启用 Ubuntu；不要直接进入其内部的
-`docker-desktop` 发行版运行项目。项目约定继续使用
-`/mnt/d/data/projects/practice/claude_agent_cloud/openma-self-host`，让 WSL 与 Windows
-共用同一工作目录；这会牺牲一部分跨文件系统 I/O 性能，但不再维护两份副本。当前本机
-Ubuntu 的 WSL Integration 尚未启用，暂时仍可使用 Windows Docker Desktop 命令。
+复制 `.env.example` 为 `.env`。认证部署设置 `PLATFORM_ROOT_SECRET` 和
+`BETTER_AUTH_SECRET`；使用 `DATABASE_URL` 连接 PostgreSQL，不设置时使用 `DATABASE_PATH`
+对应的 SQLite。
 
-配置数据库和 `PLATFORM_ROOT_SECRET` 后，使用仓库现有的开发或启动命令运行 Node 服务。
-Node 服务会从 `apps/console/dist` 提供 Console 静态文件。
+```bash
+pnpm dev
+docker compose -f docker-compose.postgres.yml up --build
+```
 
-常用运行配置：
+Console 构建到 `apps/console/dist` 后，可通过 `CONSOLE_DIR` 让 Node 服务提供静态文件。
 
-- `DATABASE_PATH`：SQLite 文件路径
-- `DATABASE_URL`：PostgreSQL 连接串
-- `PLATFORM_ROOT_SECRET`：用于加密凭据和 Model Card key
-- `SANDBOX_PROVIDER=subprocess`
-- `CONSOLE_DIR`：覆盖 Console 构建目录
+## 精简规则
 
-## 许可证
-
-项目保留官方许可证和声明文件，详见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
+保持项目小：优先最短可用流程，删除无消费者的入口；没有明确用户需求和测试证据时，
+不新增 provider、adapter、worker 或未来兼容壳。

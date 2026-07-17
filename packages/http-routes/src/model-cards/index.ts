@@ -123,6 +123,19 @@ export function buildModelCardRoutes(deps: {
     }
   });
 
+  app.post("/:id/archive", async (c) => {
+    try {
+      const card = await deps.modelCards.archive({
+        tenantId: c.var.tenant_id,
+        cardId: c.req.param("id"),
+      });
+      return c.json(toApiShape(card));
+    } catch (error) {
+      if (error instanceof ModelCardNotFoundError) return c.json({ error: "Model card not found" }, 404);
+      throw error;
+    }
+  });
+
   app.get("/:id/key", async (c) => {
     if (!deps.internalToken || c.req.header("x-oma-internal-token") !== deps.internalToken) {
       return c.json({ error: "not found" }, 404);

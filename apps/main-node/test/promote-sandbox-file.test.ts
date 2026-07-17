@@ -38,7 +38,6 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
       DATABASE_PATH: join(opts.dataDir, "oma.db"),
       AUTH_DATABASE_PATH: join(opts.dataDir, "auth.db"),
       SANDBOX_WORKDIR: join(opts.dataDir, "sandboxes"),
-      MEMORY_BLOB_DIR: join(opts.dataDir, "memory-blobs"),
       FILES_BLOB_DIR: join(opts.dataDir, "files-blobs"),
       SESSION_OUTPUTS_DIR: join(opts.dataDir, "outputs"),
       AUTH_DISABLED: "1",
@@ -52,7 +51,8 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
   const logBuf: string[] = [];
   child.stdout?.on("data", (b: Buffer) => logBuf.push(b.toString()));
   child.stderr?.on("data", (b: Buffer) => logBuf.push(b.toString()));
-  const deadline = Date.now() + 30_000;
+  const startupTimeoutMs = Number(process.env.OMA_TEST_STARTUP_TIMEOUT_MS ?? 120_000);
+  const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`http://localhost:${port}/health`);
@@ -65,7 +65,7 @@ async function startMainNode(opts: { dataDir: string }): Promise<ProcessHandle> 
   }
   console.error("main-node never became ready. Logs:\n" + logBuf.join(""));
   child.kill("SIGKILL");
-  throw new Error(`main-node didn't respond on /health within 30s`);
+  throw new Error(`main-node didn't respond on /health within ${startupTimeoutMs}ms`);
 }
 
 function killHard(handle: ProcessHandle): Promise<void> {

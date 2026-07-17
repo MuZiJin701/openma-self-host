@@ -123,6 +123,9 @@ export interface ModelCardRepo {
   /** Hard-delete. Caller is responsible for any cascade (none today). */
   delete(tenantId: string, cardId: string): Promise<void>;
 
+  /** Soft-archive a card so active model resolution no longer finds it. */
+  archive(tenantId: string, cardId: string, archivedAt: number): Promise<ModelCardRow>;
+
   /**
    * Atomic clear-then-set: clears every is_default = 1 row in the tenant and
    * marks this card as default. Replaces the legacy clearDefaults+setDefault

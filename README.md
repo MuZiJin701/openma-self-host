@@ -1,28 +1,27 @@
 # OpenMA Self-Host
 
-OpenMA Self-Host is a minimal, single-node-first Agent service for multiple users.
-Each user is isolated by tenant and workspace, and can create multiple Agents and Sessions.
+OpenMA Self-Host is a small multi-user Agent service. A shared SQLite or PostgreSQL
+database stores tenant configuration and metadata; each tenant gets one derived
+Workspace directory for all of its content. Console, the project SDK, CLI, and
+Anthropic-compatible HTTP clients use the same `/v1` API.
 
-## Retained capabilities
+## Core surface
 
-- Agent and Session APIs with the Console chat interface
-- Per-user Workspace storage
-- Tenant-scoped Model Cards and Skills
-- `env-local-runtime` with the trusted local `subprocess` runner
-- Local or cloud model APIs through Model Cards
-- SQLite for local deployment, with PostgreSQL support for shared deployments
+- Agents, Sessions, tenant/workspace isolation, Model Cards, Skills, Environments, and Files
+- Environment records are available through CRUD, but only `env-local-runtime` is accepted
+- Sessions run in the trusted local `subprocess` backend
+- Local filesystem blobs; SQLite for simple deployments and PostgreSQL for shared deployments
+- Local or remote Anthropic-compatible model providers configured through tenant Model Cards
 
-## Removed from this project
-
-Integrations are not part of this self-hosted project. The Linear, GitHub and Slack
-pages, client APIs, provider packages, OAuth callbacks, webhook receivers, integration
-assets and the `apps/integrations` Worker are removed. The official website, Cloudflare
-Worker applications and integration deployment scripts are not built or started.
+Vaults, Memory, Dreams, Evals, Integrations, MCP, OAuth, Webhook, Runtime Daemon, remote
+sandbox providers, S3, and Cloudflare Workers are outside this self-host project.
+Historical database migrations are retained for forward compatibility; they are not active API
+surfaces and are not removed or rolled back.
 
 ## Development
 
-Node.js 22 or newer and pnpm 11 are recommended. On Windows, Node 22 is recommended
-because the SQLite native dependency has a prebuilt binary for that runtime.
+Codex, source, commands, dependencies, and tests run in WSL at:
+`/home/chenjinchi/project/openma-self-host`.
 
 ```bash
 pnpm install
@@ -31,19 +30,18 @@ pnpm db:check
 pnpm --filter managed-agents-console build
 ```
 
-Run the Node service with the repository's normal development/start command after
-configuring the database and `PLATFORM_ROOT_SECRET`. The Node service serves the
-Console from `apps/console/dist`.
+Copy `.env.example` to `.env`. Set `PLATFORM_ROOT_SECRET` and `BETTER_AUTH_SECRET` for an
+authenticated deployment. Use `DATABASE_URL` for PostgreSQL, or `DATABASE_PATH` for SQLite.
 
-Useful runtime settings:
+```bash
+pnpm dev
+docker compose -f docker-compose.postgres.yml up --build
+```
 
-- `DATABASE_PATH` for SQLite
-- `DATABASE_URL` for PostgreSQL
-- `PLATFORM_ROOT_SECRET` for encrypted credentials and Model Card keys
-- `SANDBOX_PROVIDER=subprocess`
-- `CONSOLE_DIR` to override the built Console directory
+The Console can be built to `apps/console/dist` and served by setting `CONSOLE_DIR`.
 
-## License
+## Rules
 
-This project retains the upstream license and notices. See [LICENSE](LICENSE) and
-[NOTICE](NOTICE).
+Keep the project small: prefer the shortest working flow, delete unused entry points, and do
+not add future providers, adapters, workers, or compatibility shells without an active user
+requirement and a test.

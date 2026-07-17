@@ -14,9 +14,10 @@ export default defineConfig({
   test: {
     pool: "threads",
     include: ["test/**/*.test.ts"],
-    // Each test spawns + kills a real main-node process — give them
-    // headroom on slow CI.
-    testTimeout: 60_000,
+    // Each test can spawn and restart real main-node processes. The shared
+    // /mnt/d workspace has a slow first tsx/TypeScript cold start, so allow
+    // enough time for two or more process boots in one recovery test.
+    testTimeout: 180_000,
     // Run sequentially so two tests don't race for the same port or
     // sqlite file.
     fileParallelism: false,

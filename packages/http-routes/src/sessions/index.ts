@@ -42,6 +42,11 @@ const ALLOWED_EVENT_TYPES = new Set<string>([
   "user.define_outcome",
 ]);
 
+function isLocalRuntimeEnvironment(environment: EnvironmentConfig): boolean {
+  const legacy = environment as EnvironmentConfig & { runtime?: string };
+  return environment.config?.type === "local" || legacy.runtime === "local";
+}
+
 interface BlobObjectListing {
   filename: string;
   size_bytes: number;
@@ -339,16 +344,16 @@ export function buildSessionRoutes(deps: SessionRoutesDeps) {
       }
       envId = deps.localRuntimeEnvId ?? "env_local_runtime";
     }
-    if (agentIsLocalRuntime && envId !== (deps.localRuntimeEnvId ?? "env_local_runtime")) {
-      return c.json({ error: "environment_not_supported", environment_id: envId }, 501);
-    }
 
     const { tenant_id: _atid, ...agentSnapshot } = agentRow;
     const envSnap = deps.loadEnvironment
       ? await deps.loadEnvironment({ tenantId: t, environmentId: envId })
       : null;
-    if (!agentIsLocalRuntime && !envSnap) {
+    if (deps.loadEnvironment && !envSnap) {
       return c.json({ error: "Environment not found" }, 404);
+    }
+    if (agentIsLocalRuntime && envSnap && !isLocalRuntimeEnvironment(envSnap)) {
+      return c.json({ error: "environment_not_supported", environment_id: envId }, 501);
     }
     const vaultIds = body.vault_ids ?? [];
 

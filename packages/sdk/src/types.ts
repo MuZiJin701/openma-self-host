@@ -257,7 +257,6 @@ export interface AgentDetail extends AgentSummary {
   system: string;
   tools: unknown[];
   skills?: string[];
-  mcp_servers?: unknown[];
   description?: string | null;
   metadata?: Record<string, unknown>;
 }

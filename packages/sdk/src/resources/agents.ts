@@ -7,7 +7,6 @@ export interface CreateAgentInput {
   system: string;
   tools?: unknown[];
   skills?: string[];
-  mcp_servers?: unknown[];
   description?: string;
   metadata?: Record<string, unknown>;
 }
@@ -18,7 +17,6 @@ export interface UpdateAgentInput {
   system?: string;
   tools?: unknown[];
   skills?: string[];
-  mcp_servers?: unknown[];
   description?: string | null;
   metadata?: Record<string, unknown>;
 }

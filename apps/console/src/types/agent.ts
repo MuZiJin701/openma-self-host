@@ -17,7 +17,6 @@ export interface AgentRecord {
   description?: string;
   tools?: unknown[];
   skills?: unknown[];
-  mcp_servers?: unknown[];
   multiagent?: {
     type: "coordinator";
     agents: Array<{ type: "agent"; id: string; version: number }>;
@@ -25,13 +24,4 @@ export interface AgentRecord {
   created_at: string;
   updated_at?: string;
   archived_at?: string;
-  /** Console-only enrichment from the OMA control plane: scratch/aux model
-   *  selection, harness binding, appendable prompt presets. Not on the
-   *  wire-format AgentConfig (those fields live in OMA-private storage). */
-  _oma?: {
-    aux_model?: { id: string; speed?: string };
-    harness?: string;
-    runtime_binding?: { runtime_id: string; acp_agent_id: string };
-    appendable_prompts?: string[];
-  };
 }

@@ -25,15 +25,13 @@ export const generateDreamId = () => `drm-${nanoid()}`;
 export const generateOutcomeId = () => `outc_${nanoid()}`;
 
 /**
- * Sentinel environment_id for sessions whose agent runs on a user-registered
- * local ACP runtime (oma bridge daemon). Anthropic's Managed Agents API
- * requires environment_id on every session (BetaManagedAgentsSession.
- * environment_id: string), and OMA's local-runtime sessions never touch a
- * sandbox container — the loop is forwarded to the daemon via RuntimeRoom.
+ * Stable fallback environment_id for self-host sessions when no tenant-owned
+ * Environment record is selected. Anthropic's Managed Agents API requires
+ * environment_id on every session; explicit sessions may instead reference
+ * any tenant-owned Environment whose config type is `local`.
  *
- * The sentinel value is recognized by getSandboxBinding (apps/main/src/
- * routes/sessions.ts) and short-circuits to sessionDoFallbackFetcher
- * without an environments-store lookup. Self-explanatory in DB / dashboards.
+ * The value remains stable for backwards compatibility with existing rows and
+ * local development clients. It is not a singleton Environment record.
  *
  * Stable string so existing rows survive across deploys; do not change
  * without a backfill plan for sessions that already point at this id.

@@ -5,6 +5,8 @@ export interface WorkerPoolJob {
   run(signal: AbortSignal): Promise<void>;
 }
 
+export type WorkerPoolOutcome = "completed" | "failed" | "cancelled" | "timeout";
+
 export interface WorkerPoolOptions {
   maxActive: number;
   tenantMaxActive: number;
@@ -16,8 +18,8 @@ export class WorkerPool {
   private readonly queue: WorkerPoolJob[] = [];
   private readonly running = new Map<string, { job: WorkerPoolJob; controller: AbortController; promise: Promise<void> }>();
   private readonly tenantActive = new Map<string, number>();
-  private readonly completions = new Map<string, Promise<void>>();
-  private readonly completionResolvers = new Map<string, () => void>();
+  private readonly completions = new Map<string, Promise<WorkerPoolOutcome>>();
+  private readonly completionResolvers = new Map<string, (outcome: WorkerPoolOutcome) => void>();
   private stopped = false;
 
   constructor(private readonly options: WorkerPoolOptions) {
@@ -30,8 +32,8 @@ export class WorkerPool {
       throw new Error(`duplicate worker job: ${job.jobId}`);
     }
     this.queue.push(job);
-    let resolveCompletion!: () => void;
-    this.completions.set(job.jobId, new Promise<void>((resolve) => {
+    let resolveCompletion!: (outcome: WorkerPoolOutcome) => void;
+    this.completions.set(job.jobId, new Promise<WorkerPoolOutcome>((resolve) => {
       resolveCompletion = resolve;
     }));
     this.completionResolvers.set(job.jobId, resolveCompletion);
@@ -39,17 +41,20 @@ export class WorkerPool {
     return { jobId: job.jobId, status: "queued" };
   }
 
-  async waitFor(jobId: string): Promise<void> {
-    await this.completions.get(jobId);
+  async waitFor(jobId: string): Promise<WorkerPoolOutcome | undefined> {
+    const completion = this.completions.get(jobId);
+    if (!completion) return undefined;
+    const outcome = await completion;
+    this.completions.delete(jobId);
+    this.completionResolvers.delete(jobId);
+    return outcome;
   }
 
   async cancel(jobId: string): Promise<boolean> {
     const queuedIndex = this.queue.findIndex((job) => job.jobId === jobId);
     if (queuedIndex >= 0) {
       const [job] = this.queue.splice(queuedIndex, 1);
-      this.completionResolvers.get(job!.jobId)?.();
-      this.completionResolvers.delete(job!.jobId);
-      this.completions.delete(job!.jobId);
+      this.completionResolvers.get(job!.jobId)?.("cancelled");
       return true;
     }
     const current = this.running.get(jobId);
@@ -68,12 +73,12 @@ export class WorkerPool {
   async shutdown(): Promise<void> {
     this.stopped = true;
     for (const job of this.queue.splice(0)) {
-      this.completionResolvers.get(job.jobId)?.();
-      this.completionResolvers.delete(job.jobId);
-      this.completions.delete(job.jobId);
+      this.completionResolvers.get(job.jobId)?.("cancelled");
     }
     for (const current of this.running.values()) current.controller.abort("shutdown");
     await Promise.all([...this.completions.values()]);
+    this.completions.clear();
+    this.completionResolvers.clear();
   }
 
   private pump(): void {
@@ -87,22 +92,24 @@ export class WorkerPool {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const promise = (async () => {
         this.options.onEvent?.({ type: "started", jobId: job.jobId, tenantId: job.tenantId, durationMs: 0 });
+        let outcome: WorkerPoolOutcome = "completed";
         try {
           if (this.options.timeoutMs && this.options.timeoutMs > 0) {
             timeoutId = setTimeout(() => controller.abort("timeout"), this.options.timeoutMs);
           }
           await job.run(controller.signal);
-          this.options.onEvent?.({ type: controller.signal.aborted ? "cancelled" : "completed", jobId: job.jobId, tenantId: job.tenantId, durationMs: Date.now() - startedAt });
+          outcome = controller.signal.aborted
+            ? controller.signal.reason === "timeout" ? "timeout" : "cancelled"
+            : "completed";
+          this.options.onEvent?.({ type: outcome, jobId: job.jobId, tenantId: job.tenantId, durationMs: Date.now() - startedAt });
         } catch (error) {
-          const type = controller.signal.reason === "timeout" ? "timeout" : controller.signal.reason === "cancelled" || controller.signal.reason === "shutdown" ? "cancelled" : "failed";
-          this.options.onEvent?.({ type, jobId: job.jobId, tenantId: job.tenantId, durationMs: Date.now() - startedAt });
+          outcome = controller.signal.reason === "timeout" ? "timeout" : controller.signal.reason === "cancelled" || controller.signal.reason === "shutdown" ? "cancelled" : "failed";
+          this.options.onEvent?.({ type: outcome, jobId: job.jobId, tenantId: job.tenantId, durationMs: Date.now() - startedAt });
           void error;
         } finally {
           if (timeoutId) clearTimeout(timeoutId);
           this.running.delete(job.jobId);
-          this.completionResolvers.get(job.jobId)?.();
-          this.completionResolvers.delete(job.jobId);
-          this.completions.delete(job.jobId);
+          this.completionResolvers.get(job.jobId)?.(outcome);
           const count = (this.tenantActive.get(job.tenantId) ?? 1) - 1;
           if (count <= 0) this.tenantActive.delete(job.tenantId); else this.tenantActive.set(job.tenantId, count);
           this.pump();

@@ -10,7 +10,7 @@ import { useApi } from "../../lib/api";
  * session/resource id and a close handler.
  *
  * Two flavors:
- *   - `ResourcePanel` — fetch + JSON-dump an agent / environment / vault.
+ *   - `ResourcePanel` — fetch + JSON-dump an agent / environment.
  *     Used when the user clicks a badge in the session header.
  *   - `FilesPanel` — list files the agent wrote under
  *     `/mnt/session/outputs/`, with download links.
@@ -20,7 +20,7 @@ export function ResourcePanel({
   panel,
   onClose,
 }: {
-  panel: { kind: "agent" | "environment" | "vault"; id: string };
+  panel: { kind: "agent" | "environment"; id: string };
   onClose: () => void;
 }) {
   // useApi returns { api, streamEvents } — destructure the call function
@@ -39,7 +39,7 @@ export function ResourcePanel({
         ? `/v1/agents/${panel.id}`
         : panel.kind === "environment"
         ? `/v1/environments/${panel.id}`
-        : `/v1/vaults/${panel.id}`;
+        : `/v1/environments/${panel.id}`;
     api<Record<string, unknown>>(url)
       .then((d) => setData(d))
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -54,7 +54,7 @@ export function ResourcePanel({
       ? `/agents/${panel.id}`
       : panel.kind === "environment"
       ? `/environments/${panel.id}`
-      : `/vaults/${panel.id}`;
+      : `/environments/${panel.id}`;
   const titleKind = panel.kind[0].toUpperCase() + panel.kind.slice(1);
 
   // For agent / env, prefer name + description in the visible header.

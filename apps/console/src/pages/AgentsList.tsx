@@ -14,26 +14,6 @@ import type { ModelCard } from "@open-managed-agents/api-types";
 import type { AgentRecord as Agent } from "../types/agent";
 import { AgentFormDialog } from "./agents/AgentFormDialog";
 
-type Runtime = {
-  id: string;
-  hostname: string;
-  status: string;
-  agents: Array<{ id: string }>;
-  /** Skills daemon detected locally on the user's machine, keyed by acp
-   *  agent id. Source for the blocklist multi-select that appears when
-   *  the user picks an acp agent. */
-  local_skills?: Record<
-    string,
-    Array<{
-      id: string;
-      name?: string;
-      description?: string;
-      source?: string;
-      source_label?: string;
-    }>
-  >;
-};
-
 type StatusValue = "any" | "active" | "archived";
 
 const STATUS_OPTIONS: { value: StatusValue; label: string }[] = [
@@ -50,7 +30,6 @@ export function AgentsList() {
     Array<{ id: string; name: string; description: string }>
   >([]);
   const [modelCards, setModelCards] = useState<ModelCard[]>([]);
-  const [runtimes, setRuntimes] = useState<Runtime[]>([]);
   const [, setAuxLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -89,7 +68,7 @@ export function AgentsList() {
   // after agent CRUD. Pull all agents (for the callable-agents dropdown)
   // separately so it isn't constrained by the main list's page size.
   //
-  // Failures of the secondary fetches (skills / model cards / runtimes) are
+  // Failures of the secondary fetches (skills / model cards) are
   // tolerated and logged: missing data degrades a dropdown but shouldn't
   // block agent CRUD. Failures of the primary `/v1/agents` call surface
   // via the toast that `useApi` raises automatically; setting `auxLoading`
@@ -110,10 +89,6 @@ export function AgentsList() {
           const mc = await api<{ data: ModelCard[] }>("/v1/model_cards?limit=200");
           setModelCards(mc.data);
         })().catch((e) => console.warn("[AgentsList] /v1/model_cards aux fetch failed", e)),
-        (async () => {
-          const rt = await api<{ runtimes: Runtime[] }>("/v1/runtimes");
-          setRuntimes(rt.runtimes);
-        })().catch((e) => console.warn("[AgentsList] /v1/runtimes aux fetch failed", e)),
       ]);
     } finally {
       setAuxLoading(false);
@@ -312,7 +287,6 @@ export function AgentsList() {
         allAgents={allAgents}
         customSkills={customSkills}
         modelCards={modelCards}
-        runtimes={runtimes}
       />
     </DataTable>
   );

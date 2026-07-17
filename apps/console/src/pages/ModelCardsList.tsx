@@ -10,6 +10,7 @@ import { FilterChip, CreatedFilterChip } from "../components/FilterChip";
 import { TextInput, SecretInput } from "../components/Input";
 import { toast } from "sonner";
 import type { ModelCard } from "@open-managed-agents/api-types";
+import { listAvailableModels } from "./model-cards-api";
 
 // Provider enum — mirrors the whitelist on the server
 // (apps/main/src/routes/model-cards.ts GET handler). Anything outside
@@ -89,10 +90,7 @@ export function ModelCardsList() {
     }
     setModelsLoading(true);
     try {
-      const result = await api<{ data: Array<{ id: string; name: string }> }>("/v1/models/list", {
-        method: "POST",
-        body: JSON.stringify({ provider, api_key: apiKey }),
-      });
+      const result = await listAvailableModels<{ data: Array<{ id: string; name: string }> }>(api);
       setAvailableModels(result.data);
     } catch {
       setAvailableModels([]);

@@ -1,4 +1,7 @@
-import type { Crypto } from "@open-managed-agents/credentials-store";
+interface Crypto {
+  encrypt(plaintext: string): Promise<string>;
+  decrypt(ciphertext: string): Promise<string>;
+}
 
 const IV_BYTES = 12;
 const KEY_BYTES = 32;
