@@ -37,6 +37,32 @@ pnpm dev
 docker compose -f docker-compose.postgres.yml up --build
 ```
 
+### Linux 服务器 PostgreSQL 部署
+
+项目使用 `docker-compose.postgres.yml` 启动 Node 服务和 PostgreSQL。服务器只需要
+Git、Docker Engine 和 Docker Compose，不需要安装 `gh`。当前 Dockerfile 的两个构建阶段
+会把 Debian APT 源切换为阿里云镜像，以改善中国大陆服务器的依赖下载速度；Docker Hub
+中的 `node` 和 `postgres` 镜像仍按 Docker 配置拉取。
+
+```bash
+git clone https://github.com/MuZiJin701/openma-self-host.git /opt/openma-self-host
+cd /opt/openma-self-host
+umask 077
+cp .env.example .env
+sed -i "s/^BETTER_AUTH_SECRET=.*/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^PLATFORM_ROOT_SECRET=.*/PLATFORM_ROOT_SECRET=$(openssl rand -hex 32)/" .env
+nano .env  # 至少设置 PUBLIC_BASE_URL
+chmod 600 .env
+mkdir -p data
+sudo chown -R 1000:1000 data
+docker compose -f docker-compose.postgres.yml up -d --build
+curl http://127.0.0.1:8787/health
+```
+
+配置中的 `PUBLIC_BASE_URL` 应填写服务器实际访问地址，例如
+`http://服务器IP:8787` 或 HTTPS 域名。PostgreSQL 只在 Compose 内部网络提供服务，
+当前测试配置不把数据库端口暴露到宿主机。
+
 Console 构建到 `apps/console/dist` 后，可通过 `CONSOLE_DIR` 让 Node 服务提供静态文件。
 `DATA_DIR` 是 SQLite 数据库和用户 Workspace 的统一根目录，系统内部文件位于
 `DATA_DIR/<user.id>/.openma/`。

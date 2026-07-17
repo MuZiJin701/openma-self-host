@@ -24,7 +24,11 @@ FROM node:22-slim AS deps
 # better-sqlite3 ships a prebuilt binary for common targets but on
 # arm64-glibc-Linux it falls back to compiling from source. python3 +
 # build-essential cover both.
-RUN apt-get update \
+RUN sed -i \
+       -e 's|deb.debian.org|mirrors.aliyun.com|g' \
+       -e 's|security.debian.org|mirrors.aliyun.com|g' \
+       /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true \
+  && apt-get update \
   && apt-get install -y --no-install-recommends python3 build-essential \
   && rm -rf /var/lib/apt/lists/*
 
@@ -62,7 +66,11 @@ FROM node:22-slim AS runtime
 # corepack is needed at runtime so `pnpm start` resolves; alternatively we
 # could invoke tsx directly via node_modules/.bin but corepack matches the
 # dev workflow exactly.
-RUN apt-get update \
+RUN sed -i \
+      -e 's|deb.debian.org|mirrors.aliyun.com|g' \
+      -e 's|security.debian.org|mirrors.aliyun.com|g' \
+      /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true \
+  && apt-get update \
   && apt-get install -y --no-install-recommends \
        curl ca-certificates git python3 \
   && rm -rf /var/lib/apt/lists/* \

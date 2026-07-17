@@ -76,6 +76,34 @@ docker compose -f docker-compose.yml up --build
 docker compose -f docker-compose.postgres.yml up --build
 ```
 
+### Linux 服务器构建源
+
+`apps/main-node/Dockerfile` 的 `deps` 和 `runtime` 两个阶段都会把 Debian 软件源从
+`deb.debian.org` 切换为 `mirrors.aliyun.com`，再执行 `apt-get update` 和依赖安装，
+用于改善中国大陆服务器的构建速度。该设置只影响 Dockerfile 内的 Debian 软件包，
+不影响 Docker Hub 镜像的下载。
+
+服务器首次部署：
+
+```bash
+git clone https://github.com/MuZiJin701/openma-self-host.git /opt/openma-self-host
+cd /opt/openma-self-host
+umask 077
+cp .env.example .env
+sed -i "s/^BETTER_AUTH_SECRET=.*/BETTER_AUTH_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^PLATFORM_ROOT_SECRET=.*/PLATFORM_ROOT_SECRET=$(openssl rand -hex 32)/" .env
+# 编辑 PUBLIC_BASE_URL，例如 http://服务器IP:8787
+nano .env
+chmod 600 .env
+mkdir -p data
+sudo chown -R 1000:1000 data
+docker compose -f docker-compose.postgres.yml up -d --build
+curl http://127.0.0.1:8787/health
+```
+
+如果服务器不在中国大陆，可按需删除 Dockerfile 中的阿里云源替换步骤。正式环境应
+继续通过反向代理提供 HTTPS；当前 Compose 内的 PostgreSQL 账号密码仅适合测试使用。
+
 主链是：登录/认证 → 解析 `user.id` → 创建 Agent → 配置 Model Card/Skill → 创建 local Environment → 创建 Session → 发送消息 → 通过 SSE 读取事件。
 
 ## 数据与重建

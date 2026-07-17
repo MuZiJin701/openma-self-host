@@ -30,6 +30,7 @@
 - 核心 user-scoped store、Workspace 派生路径、Session FIFO/并发、pending 恢复、取消/超时、SSE resume、Model Cards、Skills、Environment、Files 已完成 user_id 重建。
 - 本轮 self-host 精简已完成：默认 workspace、Node 后端入口、Console、SDK、配置和测试只保留核心主链；旧表和历史 migration 仅作向前迁移兼容，不代表 active API。
 - 已删除 S3/Cloudflare 运行时适配器、D1 工厂、LLM 全量日志/R2 入口、ACP runtime_binding、评估入口和孤立评估测试；Blob 只保留 local-fs 与 in-memory。
+- Dockerfile 的 deps/runtime 构建阶段已切换 Debian APT 源到阿里云镜像，便于中国大陆 Linux 服务器构建；Docker Hub 镜像源不在本项目内配置。
 - Agent active 配置只保留名称、模型、system、tools、Skills、description 和 metadata；MCP、multi-agent delegation、aux model、appendable prompts 和自定义 harness 入口已从 API、store、route、Console 移除。Environment active 配置只保留 `config.type=local`，旧 provider build 列通过新 migration 删除。
 - active schema、认证、stores、routes、Console 和 SDK 已删除 tenant、membership、`x-active-tenant`、tenant switch 和 tenant_id 归属路径，直接使用 Better Auth 的不可变 `user.id`。
 - 已验证：本轮删除 MCP active surface 后，`pnpm typecheck`、`pnpm db:check`、完整 `TMPDIR=/tmp TMP=/tmp TEMP=/tmp pnpm test`、Session Runtime 32/32、main-node 58/58（1 个既有 skip）、Console 25/25、SDK build、Console tsc/build 和 `git diff --check` 均通过；此前还验证过用户资源隔离、DATA_DIR 布局和 Docker PostgreSQL smoke。
