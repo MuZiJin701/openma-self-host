@@ -4,13 +4,12 @@
 // Design contract (DIP + LSP):
 //
 //   ADAPTERS depend on this port and ONLY this port. They MUST NOT:
-//     - import dialect-specific Drizzle types (DrizzleD1Database, etc.)
+//     - import dialect-specific Drizzle types
 //     - branch on dialect (`"batch" in db`, `instanceof`, `dialect === ...`)
 //     - cast their internal db to a concrete type
 //
-//   COMPOSITION ROOT (apps/main, apps/main-node, apps/agent, packages/services)
+//   COMPOSITION ROOT (apps/main-node, apps/agent, packages/services)
 //   constructs the matching Drizzle client and passes it through this port:
-//     CF D1:           drizzle(env.MAIN_DB, { schema })
 //     Node-PG:         drizzle(postgresClient, { schema })
 //     Node-SQLite:     drizzle(betterSqlite3Db, { schema })
 //
@@ -27,17 +26,15 @@
 // just the `.select / .insert / .update / .delete` methods every dialect
 // shares. No casts in adapter code, no concrete-type imports.
 
-import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 /**
  * The dependency-inversion port. Public construction-site type. The
- * three concrete Drizzle clients (D1 / better-sqlite3 / postgres-js)
- * are all valid here.
+ * The two self-host Drizzle clients (better-sqlite3 / postgres-js) are
+ * valid here.
  */
 export type OmaDb<TSchema extends Record<string, unknown> = Record<string, unknown>> =
-  | DrizzleD1Database<TSchema>
   | BetterSQLite3Database<TSchema>
   | PostgresJsDatabase<TSchema>;
 
@@ -58,11 +55,11 @@ export type OmaDialect = "sqlite" | "pg";
  * field as this type. NO concrete-driver import in adapter code.
  *
  * Internally we widen via `BetterSQLite3Database` because its method
- * signatures are the most permissive (D1's method signatures are a
- * structural subset). `as` casts STAY HERE — never in adapter code.
+ * signatures are the most permissive. `as` casts STAY HERE — never in
+ * adapter code.
  */
 // We use BetterSQLite3Database<TSchema> because its select/insert/update/delete
-// chain types are runtime-compatible with D1 + postgres-js (Drizzle's design)
+// chain types are runtime-compatible with SQLite + postgres-js (Drizzle's design)
 // but expose the most permissive type signature, so casts in `_shared/` here
 // don't require dialect-specific imports in adapters.
 export type OmaDbBuilder = BetterSQLite3Database<Record<string, never>>;
@@ -124,14 +121,11 @@ export async function runOnce(query: PromiseLike<unknown> | SqliteRunChain): Pro
 
 // ──────────────────────────────────────────────────────────────────────
 // Atomic batch — single canonical helper, replacing the 4 copy-pasted
-// `atomicWrite` impls subagents accidentally emitted in adapter files.
-// Adapters call `atomicWrite(db, [q1, q2, q3])`; helper internally
-// detects whether to use D1's batch() or PG's transaction().
+// `atomicWrite` implementations in adapter files. Adapters call
+// `atomicWrite(db, [q1, q2, q3])`; this helper selects the local SQLite or
+// PostgreSQL transaction path.
 // ──────────────────────────────────────────────────────────────────────
 
-interface D1Batch {
-  batch(stmts: unknown[]): Promise<unknown>;
-}
 interface PgTransaction {
   transaction<R>(cb: (tx: unknown) => Promise<R>): Promise<R>;
 }
@@ -139,8 +133,8 @@ interface PgTransaction {
 /**
  * Run multiple write statements as a single atomic unit.
  *
- * D1: uses native `db.batch([...])` (single round-trip, atomic).
- * PG / better-sqlite3: uses `db.transaction(tx => { ... })`.
+ * PostgreSQL uses `db.transaction(...)`; better-sqlite3 uses its synchronous
+ * transaction callback.
  *
  * Adapters write:
  *
@@ -155,15 +149,6 @@ export async function atomicWrite<TSchema extends Record<string, unknown> = Reco
   db: OmaDb<TSchema>,
   queries: unknown[],
 ): Promise<void> {
-  // D1 path — drizzle's D1 wrapper exposes `batch` taking a list of
-  // SQLite chain-builders directly.
-  const maybeBatch = db as unknown as Partial<D1Batch>;
-  if (typeof maybeBatch.batch === "function") {
-    // D1 requires a non-empty array; runtime invariant.
-    await maybeBatch.batch(queries as unknown[]);
-    return;
-  }
-
   // better-sqlite3 path — the native transaction() is sync (the driver
   // refuses Promise-returning callbacks). Each Drizzle query has a sync
   // `.run()` we can invoke under the transaction.
@@ -180,7 +165,7 @@ export async function atomicWrite<TSchema extends Record<string, unknown> = Reco
     return;
   }
 
-  // PG / postgres-js path — wrap in a transaction, run each query
+  // PostgreSQL path — wrap in a transaction, run each query
   // sequentially. Each query is a Drizzle chain-builder; awaiting it
   // executes against the current transaction context.
   if (typeof txDb.transaction === "function") {

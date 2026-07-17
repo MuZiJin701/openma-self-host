@@ -1,7 +1,6 @@
 // NodeWorkspaceBackupService — tar+upload workspace snapshots to a
-// BlobStore on demand, restore on cold start. Backs the
-// SandboxOrchestrator's snapshot/restore for providers that don't ship
-// native CF-style createBackup (everything except CloudflareSandbox).
+// BlobStore on demand and restore on cold start. Backs the
+// SandboxOrchestrator's snapshot/restore for the local self-host sandbox.
 //
 // Strategy:
 //   - Snapshot: spawn `tar -C <workdir> -cf - .` under the sandbox's
@@ -9,8 +8,8 @@
 //     BlobStore key `workspace-backups/<user>/<sessionId>/<ts>.tar.zst`.
 //     For LocalSubprocess this means tar-ing the workdir directly on
 //     the host — bypasses the SandboxExecutor port for speed/efficiency.
-//     For LiteBox / Daytona / E2B / BoxRun, drive tar through the
-//     sandbox's exec primitive and round-trip via readFileBytes.
+//     The same sandbox exec/read primitives are used when the workspace is
+//     managed outside the host process.
 //   - Restore: download the tar from BlobStore, write to a temp file,
 //     drive tar -xf inside the sandbox via exec.
 //

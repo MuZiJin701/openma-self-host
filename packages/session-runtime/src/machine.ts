@@ -1,6 +1,4 @@
-// SessionStateMachine — single source for turn lifecycle on both CF and
-// Node. Phase 2 of the unified-runtime plan: Node adopts this; Phase 3
-// CF SessionDO becomes a thin shell that constructs one of these.
+// SessionStateMachine — single source for the self-host turn lifecycle.
 //
 // Surface (callable from per-platform shell):
 //
@@ -14,9 +12,7 @@
 //     Detect orphan turns (sessions row marked 'running' with a
 //     turn_id we don't recognise as our own active turn) and reconcile
 //     them via recoverInterruptedState. Called from:
-//       - CF DO alarm() (every 30s while a turn is in flight, and on
-//         cold start when a request hits an evicted DO)
-//       - Node SessionRegistry.bootstrap() at process start
+//       - SessionRegistry.bootstrap() at process start
 //       - Anywhere a stale-state hint is useful (e.g. an SSE reconnect)
 //
 //   destroy()
@@ -39,7 +35,7 @@ import type { OrphanTurn, RuntimeAdapter, TurnId } from "./ports";
 import type { SandboxExecutor } from "@open-managed-agents/sandbox";
 
 /**
- * Pluggable harness — both CF and Node want the same default-loop
+ * Pluggable harness — the self-host shell supplies the default-loop
  * harness, but the machine doesn't import it directly so we keep the
  * package's dep graph small (no `@open-managed-agents/agent` dep).
  *
@@ -59,12 +55,10 @@ export interface SessionMachineDeps {
   adapter: RuntimeAdapter;
 
   /** Per-session sandbox. Constructed by the shell so it can pick the
-   *  backend (LocalSubprocess / E2B / Daytona / CloudflareSandbox) and
-   *  inject sessionId-scoped paths.  */
+   *  backend (LocalSubprocess) and inject sessionId-scoped paths.  */
   sandbox: SandboxExecutor;
 
-  /** Look up the agent config. CF reads from a snapshot or the agents
-   *  store; Node reads from agentsService. */
+  /** Look up the agent config from the agents store. */
   loadAgent(agentId: string): Promise<AgentConfig | null>;
 
   /** Mount /mnt/session/outputs/ into the sandbox. Per-session bound
@@ -73,8 +67,7 @@ export interface SessionMachineDeps {
    *  Optional — sandboxes / hosts that don't support it skip silently. */
   mountSessionOutputs?(opts: { sandbox: SandboxExecutor }): Promise<void>;
 
-  /** Build the LanguageModel for this turn. CF reads env from
-   *  bindings; Node from process.env. */
+  /** Build the LanguageModel for this turn from the host environment. */
   buildModel(agent: AgentConfig): LanguageModel | Promise<LanguageModel>;
 
   /** Build harness tools. The harness package owns the tool list; the
@@ -230,7 +223,7 @@ export class SessionStateMachine {
     );
 
     // recoverInterruptedState wants an EventLogRepo with sync getEvents
-    // — same contract the CF DO uses. The adapter's eventLog satisfies
+    // — the adapter's eventLog satisfies
     // it on both platforms (SqlEventLog implements the async surface,
     // and we serve the sync requirement via the same in-memory cache
     // the harness already uses... but here on cold start we don't have

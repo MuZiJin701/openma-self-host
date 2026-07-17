@@ -1,14 +1,10 @@
 // SandboxOrchestrator — the small provisioning boundary for local sessions.
 //
-// Replaces the per-runtime plumbing that used to live separately in
-//   - apps/agent/src/oma-sandbox.ts (CF setOutboundContext / setBackupContext / snapshot)
-//   - apps/main-node/src/registry.ts (Node mountMemoryStore / mountSessionOutputs / setOutboundContext)
-// CF wiring constructs the orchestrator with `cfBindings`; Node wiring
-// passes `nodeBindings`. Both call the same `provision(sessionId, ...)`.
+// Keeps session provisioning in one small boundary: the host supplies the
+// sandbox and optional workspace-backup service, then calls provision().
 //
-// What stays per-provider: the SandboxExecutor adapter implementations
-// (LocalSubprocess, LiteBox, Daytona, E2B, BoxRun, CloudflareSandbox) —
-// the orchestrator never branches on provider. Capabilities are
+// What stays provider-specific: SandboxExecutor implementations. The
+// orchestrator never branches on provider. Capabilities are
 // introspected via the `capabilities()` helper which fakes a minimal
 // SandboxExecutor surface query (presence-of-method probe) so the
 // orchestrator can refuse session creation when a user policy requires
@@ -19,7 +15,7 @@ import type { SandboxExecutor } from "./ports";
 export interface OrchestratorBackupHandle {
   /** Backup id — opaque to callers; format depends on provider. */
   id: string;
-  /** Provider hint — CF uses the Sandbox SDK's directory ref shape. */
+  /** Optional provider-specific directory reference. */
   dir?: string;
   localBucket?: boolean;
 }
@@ -34,7 +30,7 @@ export interface SandboxCapabilities {
 export interface ProvisionInput {
   sessionId: string;
   userId: string;
-  /** Optional environment id — only meaningful for CF backups (per-env scope). */
+  /** Optional environment id for backup implementations that need it. */
   environmentId?: string;
   /** Mount /mnt/session/outputs/ scoped to (userId, sessionId). */
   mountOutputs?: boolean;
@@ -66,21 +62,19 @@ export interface SandboxOrchestrator {
     userId: string;
   }): Promise<OrchestratorBackupHandle | null>;
 
-  /** Tell a long-idle sandbox "I'm still active" — resets CF's
-   *  sleepAfter timer. No-op for adapters that don't auto-sleep. */
+  /** Tell a long-idle sandbox it is still active. No-op when unsupported. */
   renewActivityTimeout(sandbox: SandboxExecutor): Promise<void>;
 }
 
 /**
  * Default orchestrator: does provider-agnostic plumbing only. Hosts
  * compose with provider-specific factories outside this package
- * (CF wires the OmaSandbox + R2 backup; Node wires the BlobStore-backed
- * tar backup via `workspaceBackupService`).
+ * The self-host Node host wires the BlobStore-backed tar backup through
+ * `workspaceBackupService`.
  */
 export interface DefaultSandboxOrchestratorDeps {
   /** Optional workspace backup repo. When unset, `snapshotWorkspaceNow`
-   *  returns null. Node wires this via NodeWorkspaceBackupService;
-   *  CF wires `recordCfBackup`. */
+   *  returns null. Node wires this via NodeWorkspaceBackupService. */
   backups?: WorkspaceBackupService | null;
   /** Optional logger for orchestrator-level warnings. */
   logger?: { warn: (msg: string, ctx?: unknown) => void; log: (msg: string) => void };

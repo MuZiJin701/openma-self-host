@@ -22,8 +22,8 @@ import type { EventStreamHub } from "./event-stream-hub";
 const log = getLogger("node-harness");
 
 /**
- * HistoryStore backed by a SqlEventLog. The interface is sync (matches the
- * CF DO contract); we call refresh() before each turn so the cache is
+ * HistoryStore backed by a SqlEventLog. The interface is sync; we call
+ * refresh() before each turn so the cache is
  * current. Adapt() returns the cached events; mutations via broadcast
  * persist to SQL and refresh the cache so subsequent getEvents reflect them.
  */
@@ -59,8 +59,7 @@ export interface NodeHarnessRuntimeOptions {
   log: SqlEventLog;
   hub: EventStreamHub;
   /** Sandbox to use for tool execution. Caller picks the implementation:
-   *  LocalSubprocessSandbox for local dev, E2BSandbox / CloudflareSandbox
-   *  in production. */
+   *  LocalSubprocessSandbox in the self-host deployment. */
   sandbox: SandboxExecutor;
   abortSignal?: AbortSignal;
 }

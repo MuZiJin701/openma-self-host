@@ -47,7 +47,7 @@ export interface SessionRegistryLike {
 
 /**
  * Subset of services HTTP routes care about. Runtime-agnostic intentionally —
- * no D1Database / KVNamespace / R2Bucket leaks here. Optional fields use
+ * no driver-specific database or storage types leak here. Optional fields use
  * `null` rather than absent so `if (services.x)` always works.
  */
 export interface RouteServices {

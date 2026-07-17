@@ -1,26 +1,21 @@
 // Runtime-agnostic SQL client port.
 //
-// Goal: lift store-package SQL adapters off Cloudflare's D1Database and onto
-// a uniform interface that any SQL backend (D1 / better-sqlite3 / postgres.js
-// / etc.) can satisfy. The shape mirrors D1's binding API because every
-// existing CF adapter uses that idiom directly:
+// Goal: give store packages one small SQL interface over SQLite and
+// PostgreSQL. The prepared-statement shape keeps repository code independent
+// from the selected driver:
 //
 //   db.prepare(sql).bind(...args).run()
 //   db.prepare(sql).bind(...args).first<T>()
 //   db.prepare(sql).bind(...args).all<T>()
 //   db.batch([stmt1, stmt2, ...])
 //
-// Keeping the chain identical means existing D1-backed repo code (e.g.
-// packages/agents-store/src/adapters/d1-agent-repo.ts) becomes runtime-
-// agnostic with `D1Database` swapped for `SqlClient`. A self-host deployment
-// then constructs `BetterSqlite3SqlClient(localDb)` and the same repo runs
-// on Node + sqlite without further edits.
+// A self-host deployment constructs the appropriate client for its local
+// SQLite or shared PostgreSQL database.
 //
-// Adapters: see ./adapters/cf-d1.ts (CF passthrough) and
-// ./adapters/better-sqlite3.ts (Node, lazy-imports the driver).
+// Adapters: see ./adapters/better-sqlite3.ts and ./adapters/postgres.ts.
 
 /**
- * Per-statement metadata returned by mutation execution. Mirrors D1Result.meta.
+ * Per-statement metadata returned by mutation execution.
  *  - changes: rows affected by this statement.
  *  - last_row_id: AUTOINCREMENT id of the row inserted by this statement,
  *    if any. Always undefined for non-INSERT or no-AUTOINCREMENT inserts.
@@ -31,7 +26,7 @@ export interface SqlExecMeta {
 }
 
 /**
- * SELECT result envelope. Mirrors D1Result<T> for `.all()`.
+ * SELECT result envelope for `.all()`.
  */
 export interface SqlSelectResult<T> {
   results?: T[];
@@ -39,7 +34,7 @@ export interface SqlSelectResult<T> {
 }
 
 /**
- * Mutation result envelope. Mirrors D1Result for `.run()`.
+ * Mutation result envelope for `.run()`.
  */
 export interface SqlRunResult<T = unknown> {
   results?: T[];
