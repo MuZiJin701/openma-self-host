@@ -36,7 +36,7 @@
     "@open-managed-agents/sessions-store": "workspace:*",
     "@open-managed-agents/shared": "workspace:*",
     "@open-managed-agents/sql-client": "workspace:*",
-    "ai": "^6.0.158",
+    "ai": "^7.0.37",
     "better-auth": "^1.6.3",
     "better-sqlite3": "^11.5.0",
     "hono": "^4.7.0",

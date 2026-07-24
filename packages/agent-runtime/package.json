@@ -16,11 +16,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.69",
+    "@ai-sdk/anthropic": "^4.0.19",
     "@open-managed-agents/event-log": "workspace:*",
     "@open-managed-agents/sandbox": "workspace:*",
     "@open-managed-agents/shared": "workspace:*",
-    "ai": "^6.0.158",
+    "ai": "^7.0.37",
     "nanoid": "^5.1.0",
     "zod": "^4.3.6"
   }
