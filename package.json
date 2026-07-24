@@ -23,7 +23,7 @@
     "db:check": "pnpm db:check:node-pg && pnpm db:check:node-sqlite"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^26.1.1",
     "drizzle-kit": "^0.31.5",
     "typescript": "^5.8.0",
     "vitest": "^4.1.3"
